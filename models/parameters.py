@@ -10,7 +10,7 @@ class PlanterConfig:
     depth: float = 600.0
     body_height: float = 600.0
 
-    # Main welded frame: Obramat raw steel tube 40x40x1.5 mm.
+    # Main welded frame: Obramat steel tube 40x40x1.5 mm.
     frame_size: float = 40.0
     frame_wall: float = 1.5
     leg_clearance: float = 80.0
@@ -20,10 +20,26 @@ class PlanterConfig:
     support_wall: float = 1.5
     bag_support_z: float = 120.0
 
-    # Removable bag frame, supported just inside the 40 mm top border.
+    # Removable perforated load-spreader plate resting on the 20x20 grid.
+    spreader_size: float = 480.0
+    spreader_thickness: float = 0.6
+
+    # Removable bag rim frame, supported just inside the 40 mm top border.
     bag_frame_outer: float = 500.0
     bag_frame_z: float = 563.0
     bag_wall: float = 2.0
+    bag_fold_thickness: float = 1.0  # visual CAD representation of doubled geotextile
+
+    # Continuous clamping frame: Obramat S275JR flat bar 30x3 mm.
+    # It clamps the folded geotextile against the 20x20 tube continuously.
+    bag_clamp_width: float = 30.0
+    bag_clamp_thickness: float = 3.0
+    bag_clamp_overhang: float = 5.0
+    bag_clamp_fasteners_per_side: int = 3
+    clamp_washer_radius: float = 5.0
+    clamp_washer_thickness: float = 1.0
+    clamp_head_radius: float = 4.0
+    clamp_head_height: float = 3.0
 
     # Obramat steel angle 20x20x3 mm.
     angle_leg: float = 20.0
@@ -78,16 +94,40 @@ class PlanterConfig:
         return self.bag_support_z + self.support_size
 
     @property
+    def spreader_z(self) -> float:
+        return self.support_top_z
+
+    @property
+    def bag_bottom_z(self) -> float:
+        return self.spreader_z + self.spreader_thickness
+
+    @property
     def bag_inner_opening(self) -> float:
         return self.bag_frame_outer - 2 * self.support_size
 
     @property
+    def bag_frame_top_z(self) -> float:
+        return self.bag_frame_z + self.support_size
+
+    @property
     def bag_height(self) -> float:
-        return self.bag_frame_z - self.support_top_z
+        return self.bag_frame_top_z - self.bag_bottom_z
 
     @property
     def bag_frame_side_cut(self) -> float:
         return self.bag_inner_opening
+
+    @property
+    def bag_clamp_outer(self) -> float:
+        return self.bag_frame_outer + 2 * self.bag_clamp_overhang
+
+    @property
+    def bag_clamp_side_cut(self) -> float:
+        return self.bag_clamp_outer - 2 * self.bag_clamp_width
+
+    @property
+    def bag_clamp_z(self) -> float:
+        return self.bag_frame_top_z + self.bag_fold_thickness
 
     @property
     def slat_side_margin(self) -> float:
