@@ -64,17 +64,31 @@ def _place(shape, position: tuple[float, float, float], label: str, color: Color
     return placed
 
 
-def _angle_y(length: float, leg: float, wall: float, mirrored: bool = False):
-    """20x20 L angle running along Y, with horizontal shelf at its top."""
-    shelf = Pos(0, 0, leg - wall) * Box(leg, length, wall, align=MIN_ALIGN)
+def _angle_y(
+    length: float,
+    leg: float,
+    wall: float,
+    mirrored: bool = False,
+    shelf_at_top: bool = True,
+):
+    """L angle running along Y. shelf_at_top=False is used for upward ledges."""
+    shelf_z = leg - wall if shelf_at_top else 0
+    shelf = Pos(0, 0, shelf_z) * Box(leg, length, wall, align=MIN_ALIGN)
     vertical_x = leg - wall if mirrored else 0
     vertical = Pos(vertical_x, 0, 0) * Box(wall, length, leg, align=MIN_ALIGN)
     return Compound(children=[shelf, vertical])
 
 
-def _angle_x(length: float, leg: float, wall: float, mirrored: bool = False):
-    """20x20 L angle running along X, with horizontal shelf at its top."""
-    shelf = Pos(0, 0, leg - wall) * Box(length, leg, wall, align=MIN_ALIGN)
+def _angle_x(
+    length: float,
+    leg: float,
+    wall: float,
+    mirrored: bool = False,
+    shelf_at_top: bool = True,
+):
+    """L angle running along X. shelf_at_top=False is used for upward ledges."""
+    shelf_z = leg - wall if shelf_at_top else 0
+    shelf = Pos(0, 0, shelf_z) * Box(length, leg, wall, align=MIN_ALIGN)
     vertical_y = leg - wall if mirrored else 0
     vertical = Pos(0, vertical_y, 0) * Box(length, wall, leg, align=MIN_ALIGN)
     return Compound(children=[shelf, vertical])
@@ -203,11 +217,9 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         shapes.append(_place(shape, position, part_id, color))
         record(part_id, name, category, material, profile, cut, **extra)
 
-    # ------------------------------------------------------------------
-    # MAIN WELDED FRAME
-    # ------------------------------------------------------------------
+    # MAIN WELDED FRAME -------------------------------------------------
     # Full-height corner posts define the 600x600x600 envelope. Every 520 mm
-    # rail is a true butt joint between posts; there are no hidden overlaps.
+    # rail is square-cut and butts against a post face; no main members overlap.
     uprights = [
         ("U01", "Front-left upright", (0, 0, 0)),
         ("U02", "Front-right upright", (cfg.length - p, 0, 0)),
@@ -251,13 +263,12 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             STEEL_TUBE_40,
         )
 
-    # ------------------------------------------------------------------
-    # LOAD PLATFORM FOR THE BAG
-    # ------------------------------------------------------------------
-    # S01/S02 span 520 mm between left/right posts. S03-S05 are 480 mm and
-    # butt between S01/S02, making a rigid grid with no tube intersections.
-    support_cross_y_front = p
-    support_cross_y_rear = cfg.depth - p - s
+    # LOAD PLATFORM FOR THE BAG ---------------------------------------
+    # Cross rails sit partly within the Y footprint of the front/rear posts, so
+    # their 20x20 end faces genuinely butt against the X=40 / X=560 post faces.
+    # Three longitudinal rails then butt between the two cross rails.
+    support_cross_y_front = p - s
+    support_cross_y_rear = cfg.depth - p
     add_tube(
         "S01",
         "Front bag-support cross rail",
@@ -281,7 +292,8 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         STEEL_TUBE_20,
     )
 
-    longitudinal_length = support_cross_y_rear - (support_cross_y_front + s)
+    longitudinal_start_y = support_cross_y_front + s
+    longitudinal_length = support_cross_y_rear - longitudinal_start_y
     for index, x in enumerate((80.0, 290.0, 500.0), start=3):
         add_tube(
             f"S{index:02d}",
@@ -291,15 +303,14 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             s,
             cfg.support_wall,
             "y",
-            (x, support_cross_y_front + s, cfg.bag_support_z),
+            (x, longitudinal_start_y, cfg.bag_support_z),
             "bag_support",
             STEEL_TUBE_20,
         )
 
-    # ------------------------------------------------------------------
-    # REMOVABLE UPPER BAG FRAME
-    # ------------------------------------------------------------------
-    # 500 mm outer square leaves 10 mm clearance to the 520 mm frame opening.
+    # REMOVABLE UPPER BAG FRAME ---------------------------------------
+    # 500 mm outside dimension leaves 10 mm clearance per side in the 520 mm
+    # opening. The side rails are 460 mm to avoid overlap with front/rear rails.
     bag_offset = (cfg.length - cfg.bag_frame_outer) / 2
     add_tube(
         "B01",
@@ -341,57 +352,42 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         s,
         cfg.support_wall,
         "y",
-        (
-            bag_offset + cfg.bag_frame_outer - s,
-            bag_offset + s,
-            cfg.bag_frame_z,
-        ),
+        (bag_offset + cfg.bag_frame_outer - s, bag_offset + s, cfg.bag_frame_z),
         "bag_frame",
         STEEL_TUBE_20,
     )
 
-    # Eight short L-angle ledges. Their horizontal shelf top is exactly Z=550,
-    # so the removable B-frame bears on steel rather than hanging from fabric.
-    angle_z = cfg.bag_frame_z - cfg.angle_leg
+    # Eight 100 mm L-angle ledges. The shelf is the lower leg: its upper face is
+    # Z=550, while the vertical leg continues upward to Z=567 and reaches the
+    # inner face of the top 40 mm frame (Z=560..600) for a real weld connection.
+    ledge_z = cfg.bag_frame_z - cfg.angle_wall
     angle_positions = [
-        ("A01", "Front-left bag-frame ledge", "x", False, (90, p, angle_z)),
-        ("A02", "Front-right bag-frame ledge", "x", False, (410, p, angle_z)),
-        (
-            "A03",
-            "Rear-left bag-frame ledge",
-            "x",
-            True,
-            (90, cfg.depth - p - cfg.angle_leg, angle_z),
-        ),
-        (
-            "A04",
-            "Rear-right bag-frame ledge",
-            "x",
-            True,
-            (410, cfg.depth - p - cfg.angle_leg, angle_z),
-        ),
-        ("A05", "Left-front bag-frame ledge", "y", False, (p, 90, angle_z)),
-        ("A06", "Left-rear bag-frame ledge", "y", False, (p, 410, angle_z)),
-        (
-            "A07",
-            "Right-front bag-frame ledge",
-            "y",
-            True,
-            (cfg.length - p - cfg.angle_leg, 90, angle_z),
-        ),
-        (
-            "A08",
-            "Right-rear bag-frame ledge",
-            "y",
-            True,
-            (cfg.length - p - cfg.angle_leg, 410, angle_z),
-        ),
+        ("A01", "Front-left bag-frame ledge", "x", False, (90, p, ledge_z)),
+        ("A02", "Front-right bag-frame ledge", "x", False, (410, p, ledge_z)),
+        ("A03", "Rear-left bag-frame ledge", "x", True, (90, cfg.depth - p - cfg.angle_leg, ledge_z)),
+        ("A04", "Rear-right bag-frame ledge", "x", True, (410, cfg.depth - p - cfg.angle_leg, ledge_z)),
+        ("A05", "Left-front bag-frame ledge", "y", False, (p, 90, ledge_z)),
+        ("A06", "Left-rear bag-frame ledge", "y", False, (p, 410, ledge_z)),
+        ("A07", "Right-front bag-frame ledge", "y", True, (cfg.length - p - cfg.angle_leg, 90, ledge_z)),
+        ("A08", "Right-rear bag-frame ledge", "y", True, (cfg.length - p - cfg.angle_leg, 410, ledge_z)),
     ]
     for part_id, name, axis, mirrored, position in angle_positions:
         angle = (
-            _angle_x(cfg.upper_support_length, cfg.angle_leg, cfg.angle_wall, mirrored)
+            _angle_x(
+                cfg.upper_support_length,
+                cfg.angle_leg,
+                cfg.angle_wall,
+                mirrored,
+                shelf_at_top=False,
+            )
             if axis == "x"
-            else _angle_y(cfg.upper_support_length, cfg.angle_leg, cfg.angle_wall, mirrored)
+            else _angle_y(
+                cfg.upper_support_length,
+                cfg.angle_leg,
+                cfg.angle_wall,
+                mirrored,
+                shelf_at_top=False,
+            )
         )
         add_shape(
             part_id,
@@ -406,7 +402,8 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             length_mm=cfg.upper_support_length,
         )
 
-    # Nominal geotextile envelope. It intentionally stops on the load platform.
+    # Nominal geotextile envelope. The liner reaches the top frame sleeve and
+    # stops on the load platform, so its weight is not carried only by the rim.
     bag_size = cfg.bag_inner_opening
     bag = _open_liner(bag_size, bag_size, cfg.bag_height, cfg.bag_wall, "G01")
     bag_xy = (cfg.length - bag_size) / 2
@@ -423,12 +420,10 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         note="sewing allowance and exact sleeve construction remain supplier-dependent",
     )
 
-    # ------------------------------------------------------------------
-    # REMOVABLE DRAIN TRAY
-    # ------------------------------------------------------------------
-    # 480 mm width gives 20 mm side clearance to the 520 mm rear opening.
-    # Its top lip is at Z=120; S01-S05 start at Z=125, leaving 5 mm vertical
-    # clearance while sliding the tray rearward for removal.
+    # REMOVABLE DRAIN TRAY --------------------------------------------
+    # 480 mm width gives 20 mm side clearance to the 520 mm rear opening. The
+    # top lip is Z=120; the load platform begins at Z=125, leaving 5 mm while
+    # sliding TR01 rearward below S02.
     tray_x = (cfg.length - cfg.tray_width) / 2
     tray_y = 55.0
     t = cfg.tray_sheet
@@ -436,14 +431,15 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     w = cfg.tray_width
     d = cfg.tray_depth
 
-    tray_children = [
-        Box(w, d, t, align=MIN_ALIGN),
-        Pos(0, 0, t) * Box(t, d, h - t, align=MIN_ALIGN),
-        Pos(w - t, 0, t) * Box(t, d, h - t, align=MIN_ALIGN),
-        Pos(t, 0, t) * Box(w - 2 * t, t, h - t, align=MIN_ALIGN),
-        Pos(t, d - t, t) * Box(w - 2 * t, t, h - t, align=MIN_ALIGN),
-    ]
-    tray = Compound(children=tray_children)
+    tray = Compound(
+        children=[
+            Box(w, d, t, align=MIN_ALIGN),
+            Pos(0, 0, t) * Box(t, d, h - t, align=MIN_ALIGN),
+            Pos(w - t, 0, t) * Box(t, d, h - t, align=MIN_ALIGN),
+            Pos(t, 0, t) * Box(w - 2 * t, t, h - t, align=MIN_ALIGN),
+            Pos(t, d - t, t) * Box(w - 2 * t, t, h - t, align=MIN_ALIGN),
+        ]
+    )
     add_shape(
         "TR01",
         "Removable drain tray",
@@ -457,18 +453,16 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             f"finished {w:g}x{d:g}x{h:g} mm"
         ),
         GALVANISED,
-        note="bend allowance must be corrected for the actual brake/tooling before cutting",
+        note="bend allowance must be corrected for actual brake/tooling before cutting",
     )
 
-    # Two 20x20x3 L guides span the full 520 mm inner depth and butt against
-    # the front/rear uprights. The tray overlaps each horizontal shelf by 10 mm.
+    # The guide shelves have their upper face at Z=110 and span Y=40..560.
+    # Their end faces butt directly against the front/rear 40 mm uprights.
     guide_z = cfg.tray_z - cfg.angle_leg
-    left_guide = _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, False)
-    right_guide = _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, True)
     add_shape(
         "TG01",
         "Left drain-tray guide",
-        left_guide,
+        _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, False, True),
         (p, p, guide_z),
         "tray_guide",
         STEEL_ANGLE,
@@ -480,7 +474,7 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     add_shape(
         "TG02",
         "Right drain-tray guide",
-        right_guide,
+        _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, True, True),
         (cfg.length - p - cfg.angle_leg, p, guide_z),
         "tray_guide",
         STEEL_ANGLE,
@@ -490,19 +484,18 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         length_mm=cfg.inner_opening,
     )
 
-    # Nominal drain fitting envelope only. Verify the real bulkhead's drilling
-    # diameter before fabrication; nominal 20 mm is NOT treated as a drill size.
-    drain_global = (
-        tray_x + cfg.drain_local_x,
-        tray_y + cfg.drain_local_y,
-        cfg.tray_z - 18.0,
-    )
+    # Symbolic envelope for the controlled drain fitting. The catalogue's
+    # nominal 20 mm is not assumed to be its drill diameter.
     drain = Cylinder(8.0, 28.0, align=CYLINDER_ALIGN)
     add_shape(
         "D01",
         "Controlled-drain bulkhead fitting",
         drain,
-        drain_global,
+        (
+            tray_x + cfg.drain_local_x,
+            tray_y + cfg.drain_local_y,
+            cfg.tray_z - 18.0,
+        ),
         "drainage",
         "20 mm / 1/2 in bulkhead fitting",
         "nominal fitting envelope",
@@ -511,12 +504,10 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         nominal_mm=cfg.drain_nominal_diameter,
     )
 
-    # ------------------------------------------------------------------
-    # TIMBER CLADDING
-    # ------------------------------------------------------------------
-    # Slats are flush with the 600 mm steel envelope, never laid over the 40 mm
-    # posts. There are 7 x 60 mm slats and six 12.5 mm gaps = 495 mm, leaving
-    # 12.5 mm margin to each 40 mm corner post.
+    # TIMBER CLADDING --------------------------------------------------
+    # The slats are flush with the 600 mm envelope and sit only in the 520 mm
+    # openings. Seven 60 mm slats + six 12.5 mm gaps = 495 mm, leaving 12.5 mm
+    # between the outer slats and each 40 mm corner post.
     slat_positions = [
         cfg.frame_size + cfg.slat_side_margin + i * (cfg.slat_width + cfg.slat_gap)
         for i in range(cfg.slat_count_per_face)
@@ -526,7 +517,6 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     for face in ("front", "rear", "left", "right"):
         for position in slat_positions:
             part_id = f"W{slat_number:02d}"
-            name = f"{face.capitalize()} timber slat {slat_number}"
             if face == "front":
                 dims = (cfg.slat_width, cfg.slat_thickness, cfg.slat_height)
                 pos = (position, 0, cfg.slat_z)
@@ -542,7 +532,7 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
 
             add_box(
                 part_id,
-                name,
+                f"{face.capitalize()} timber slat {slat_number}",
                 dims,
                 pos,
                 "cladding_service_panel" if face == "rear" else "cladding_fixed",
@@ -556,9 +546,8 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             )
             slat_number += 1
 
-    # Fixed faces use welded 20x4 backing straps; timber screws in from behind.
-    # Rear straps belong to the removable service panel and therefore are NOT
-    # welded to the frame.
+    # Fixed faces use welded 20x4 backing straps. Rear straps belong to the
+    # removable service panel and are screwed to the timber instead of welded.
     strap_zs = (cfg.cladding_strap_z_low, cfg.cladding_strap_z_high)
     strap_id = 1
     for face in ("front", "rear", "left", "right"):
@@ -593,13 +582,12 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             )
             strap_id += 1
 
-    # Four welded tabs allow the complete rear slat panel to be screwed on/off.
-    # Tabs sit immediately behind the two rear backing straps, so the panel is
-    # flush when installed and the screws are hidden from normal viewing angles.
+    # Four tabs are welded to the rear uprights. Their faces touch the rear
+    # service-panel backing straps, allowing four hidden M5 fasteners.
     tab_specs = [
-        ("MT01", 40.0, cfg.cladding_strap_z_low),
+        ("MT01", p, cfg.cladding_strap_z_low),
         ("MT02", cfg.length - p - cfg.service_mount_tab_length, cfg.cladding_strap_z_low),
-        ("MT03", 40.0, cfg.cladding_strap_z_high),
+        ("MT03", p, cfg.cladding_strap_z_high),
         ("MT04", cfg.length - p - cfg.service_mount_tab_length, cfg.cladding_strap_z_high),
     ]
     for part_id, x, z in tab_specs:
@@ -618,8 +606,6 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         )
 
     joints: list[dict[str, Any]] = []
-
-    # Main frame: each 520 rail terminates against two 600 mm uprights.
     rail_to_uprights = {
         "R01": ("U01", "U02"),
         "R02": ("U03", "U04"),
@@ -650,14 +636,14 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
                 "id": "JB01",
                 "type": "welded support-grid assembly",
                 "parts": ["S01", "S02", "S03", "S04", "S05", "U01", "U02", "U03", "U04"],
-                "fit": "S01/S02 butt to uprights; S03-S05 butt between S01/S02",
-                "weld": "fillet weld at every tube end; no geometric overlap",
+                "fit": "S01/S02 20x20 ends fully contact upright faces; S03-S05 butt between S01/S02",
+                "weld": "fillet weld at every tube end; no tube overlap",
             },
             {
                 "id": "JB02",
-                "type": "removable gravity support",
+                "type": "removable gravity-supported bag frame",
                 "parts": ["B01", "B02", "B03", "B04", "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08"],
-                "fit": "500 mm bag frame inside 520 mm opening = 10 mm clearance per side",
+                "fit": "500 mm frame inside 520 mm opening = 10 mm clearance per side; ledge shelf top Z=550",
                 "weld": "A01-A08 welded to top frame; B01-B04 welded only to each other",
             },
             {
@@ -683,8 +669,8 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
                 "id": "JD02",
                 "type": "controlled drainage",
                 "parts": ["TR01", "D01"],
-                "fit": "bulkhead located near rear-right tray corner for hose/tap access behind service panel",
-                "critical": "measure the purchased bulkhead; do not drill from the nominal 20 mm catalogue size",
+                "fit": "bulkhead near rear-right tray corner for hose/tap access behind service panel",
+                "critical": "measure the purchased bulkhead; do not drill from nominal 20 mm catalogue size",
             },
         ]
     )
@@ -705,6 +691,7 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             "tray_side_clearance_each_side_mm": (cfg.inner_opening - cfg.tray_width) / 2,
             "tray_to_support_vertical_clearance_mm": cfg.bag_support_z - (cfg.tray_z + cfg.tray_wall_height),
             "slat_margin_to_posts_mm": cfg.slat_side_margin,
+            "support_longitudinal_cut_mm": longitudinal_length,
         },
         "parts": parts,
         "joints": joints,
@@ -720,11 +707,11 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         },
         "fabrication_notes": [
             "Main 40x40 rails are square-cut to 520 mm and butt between full-height 600 mm corner posts.",
-            "20x20 bag-support longitudinals are cut to 480 mm and butt between S01/S02; they do not overlap the cross rails.",
-            "The removable bag frame is 500 mm outside dimension and bears on eight welded L-angle ledges.",
-            "The tray is removable and drained; the 10 mm wall is intentionally low to preserve extraction clearance.",
+            "S01/S02 are positioned for full 20x20 end-face contact with the corner uprights; S03-S05 butt between them.",
+            "The removable bag frame is 500 mm outside dimension and bears on eight upward-facing L-angle ledges.",
+            "The tray is removable and drained; its 10 mm wall is intentionally low to preserve extraction clearance.",
             "Galvanised tray bend allowance and drain drilling diameter must be finalised from the actual sheet-metal tooling and purchased fitting.",
-            "Raw-steel frame parts require corrosion preparation/primer/topcoat after welding and before timber/geotextile installation.",
+            "Raw-steel parts require corrosion preparation, primer and topcoat after welding and before timber/geotextile installation.",
         ],
         "purchase_references": [
             {"item": "40x40x1.5 raw steel tube, 3 m", "supplier": "Obramat"},
@@ -736,9 +723,9 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             {"item": "20 mm / 1/2 in bulkhead fitting", "supplier": "Leroy Merlin"},
         ],
         "notes": [
-            "This is the first fabrication-oriented square planter model; the trellis is intentionally excluded.",
-            "All decorative rear slats form one removable service panel so the tray remains almost invisible in normal use.",
-            "Weld bead solids and drilled fastener holes are represented semantically rather than modelled as final fabrication geometry in v1.",
+            "The trellis is intentionally excluded from this model.",
+            "All rear decorative slats form one removable service panel, keeping the tray hidden in normal use.",
+            "Weld beads and final drilled fastener holes are specified semantically rather than represented as final solids in v1.",
         ],
     }
 
