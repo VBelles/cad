@@ -56,7 +56,8 @@ class PlanterConfig:
     drain_local_x: float = 400.0
     drain_local_y: float = 450.0
 
-    # Decorative timber panels. Vertical slats use Obramat 60x20 mm stock.
+    # Decorative timber panels. Current visual uses 60x20 mm stock, but panel
+    # depth is deliberately parameterised so slats can later become 10/15 mm.
     slat_width: float = 60.0
     slat_thickness: float = 20.0
     slat_height: float = 430.0
@@ -64,22 +65,40 @@ class PlanterConfig:
     slat_count_per_face: int = 7
     slat_z: float = 125.0
 
-    # Two concealed horizontal timber battens per panel; same 60x20 stock.
+    # Two concealed horizontal timber battens per panel; same 60x20 stock for now.
+    # They overlap the lower/top steel rails vertically so the two small mounting
+    # brackets can bolt directly into the battens without corner hardware.
     batten_height: float = 60.0
     batten_thickness: float = 20.0
-    batten_z_low: float = 185.0
-    batten_z_high: float = 435.0
+    batten_z_low: float = 110.0
+    batten_z_high: float = 510.0
 
-    # Four concealed panel mounts per face. Tabs are cut from the same 30x3 flat bar
-    # used for the bag clamp and welded to the inner faces of the 40x40 corner posts.
-    panel_tab_length: float = 50.0
-    panel_tab_height: float = 30.0
-    panel_tab_thickness: float = 3.0
-    panel_tab_post_overlap: float = 20.0
+    # Panel depth/alignment. 0 = timber outer face flush with the outer steel face.
+    # For an inner-flush panel set this to frame_size - panel_total_depth.
+    panel_outer_inset: float = 0.0
+
+    # Two small 20x20x3 angle brackets per timber face: one on the lower rail and
+    # one on the upper rail, both centred on that face. Each bracket uses two M5
+    # fasteners into the timber batten. Moving the bracket in depth accommodates
+    # a different slat thickness without changing the steel corner geometry.
+    panel_bracket_length: float = 60.0
+    panel_bracket_leg: float = 20.0
+    panel_bracket_wall: float = 3.0
+    panel_brackets_per_face: int = 2
+    panel_bracket_fasteners_each: int = 2
+    panel_bracket_screw_spacing: float = 30.0
     panel_mount_screw_diameter: float = 5.0
     panel_mount_screw_length: float = 16.0
     panel_mount_head_radius: float = 4.5
     panel_mount_head_thickness: float = 3.0
+
+    # Legacy tab dimensions are retained only because the v4 base builder still
+    # creates them before the v5 wrapper removes/replaces them. They are not part
+    # of the exported v5 design and can disappear when planter.py is consolidated.
+    panel_tab_length: float = 50.0
+    panel_tab_height: float = 30.0
+    panel_tab_thickness: float = 3.0
+    panel_tab_post_overlap: float = 20.0
 
     # Symbolic floor-protection inserts/caps for the 40x40 legs.
     foot_cap_visible: float = 2.0
@@ -157,6 +176,15 @@ class PlanterConfig:
             + (self.slat_count_per_face - 1) * self.slat_gap
         )
         return (self.inner_opening - occupied) / 2
+
+    @property
+    def panel_total_depth(self) -> float:
+        return self.slat_thickness + self.batten_thickness
+
+    @property
+    def panel_back_offset(self) -> float:
+        """Distance from the exterior steel face to the inner face of a panel."""
+        return self.panel_outer_inset + self.panel_total_depth
 
     @property
     def tray_side_clearance(self) -> float:
