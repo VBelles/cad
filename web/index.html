@@ -6,7 +6,14 @@
   <meta name="color-scheme" content="light dark">
   <title>CAD · Square planter 600</title>
   <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.3.1/model-viewer.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
+      }
+    }
+  </script>
   <script type="module" src="./app.js"></script>
 </head>
 <body>
@@ -18,45 +25,24 @@
     <nav class="actions" aria-label="Model downloads">
       <a class="button secondary" href="./downloads/planter.step">STEP</a>
       <a class="button secondary" href="./models/planter.glb">GLB</a>
-      <a class="button secondary" href="./models/planter-exploded.glb">Exploded GLB</a>
       <a class="button" href="https://github.com/VBelles/cad">GitHub</a>
     </nav>
   </header>
 
   <main>
-    <section class="viewer-card" aria-label="Interactive 3D model">
-      <div class="model-switcher" role="group" aria-label="Model view">
-        <button
-          class="model-switch active"
-          type="button"
-          aria-pressed="true"
-          data-model-src="./models/planter.glb"
-          data-model-alt="Assembled 600 millimetre square planter">
-          Assembled
-        </button>
-        <button
-          class="model-switch"
-          type="button"
-          aria-pressed="false"
-          data-model-src="./models/planter-exploded.glb"
-          data-model-alt="Logical exploded view of planter body, bag and drain tray">
-          Logical exploded
-        </button>
+    <section class="viewer-card" aria-label="Interactive 3D CAD model">
+      <div class="viewer-toolbar">
+        <div class="viewer-toolbar-main">
+          <button id="reset-explosion" class="tool-button active" type="button">Assembled</button>
+          <button id="explode-all" class="tool-button" type="button">Explode all</button>
+        </div>
+        <div id="explode-groups" class="explode-groups" aria-label="Explode individual groups"></div>
       </div>
 
-      <model-viewer
-        id="viewer"
-        src="./models/planter.glb"
-        alt="600 millimetre square steel planter with timber panels, geotextile bag and removable drain tray"
-        camera-controls
-        touch-action="pan-y"
-        shadow-intensity="0.7"
-        exposure="1"
-        environment-image="neutral"
-        interaction-prompt="auto">
-        <div class="progress" slot="progress-bar">Loading 3D model…</div>
-      </model-viewer>
-      <div class="viewer-help">Drag to orbit · scroll/pinch to zoom</div>
+      <div id="viewer" class="three-viewer" aria-label="3D planter viewer">
+        <div class="progress">Loading 3D model…</div>
+      </div>
+      <div class="viewer-help">Drag to orbit · wheel to zoom · click a part to inspect it</div>
     </section>
 
     <aside class="info-panel">
@@ -66,6 +52,27 @@
           <span id="status" class="badge">Loading…</span>
         </div>
         <dl id="summary" class="summary"></dl>
+      </section>
+
+      <section>
+        <h2>Selected part</h2>
+        <p id="selected-empty" class="empty-state">Click any visible CAD part.</p>
+        <div id="selected-part" class="selected-part" hidden>
+          <div class="selected-title-row">
+            <div>
+              <strong id="selected-name"></strong>
+              <span id="selected-id" class="part-id"></span>
+            </div>
+            <button id="explode-selected" class="mini-button" type="button">Explode part</button>
+          </div>
+          <dl id="selected-details" class="part-details"></dl>
+          <a id="selected-product" class="product-link" target="_blank" rel="noopener" hidden></a>
+        </div>
+      </section>
+
+      <section>
+        <h2>Materials / purchase</h2>
+        <div id="products" class="products"></div>
       </section>
 
       <section>
@@ -92,7 +99,7 @@
   </main>
 
   <footer>
-    Generated from Python/build123d. The repository is the source of truth.
+    Generated from Python/build123d. One GLB is the geometry source; exploded views are virtual transforms in the browser.
   </footer>
 </body>
 </html>
