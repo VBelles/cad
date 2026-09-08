@@ -4,7 +4,7 @@ import copy
 from dataclasses import asdict
 from typing import Any
 
-from build123d import Align, Box, Color, Compound, Cylinder, Pos, Rot
+from build123d import Align, Color, Compound, Cylinder, Pos
 
 from .parameters import PlanterConfig
 from .planter import (
@@ -14,16 +14,18 @@ from .planter import (
     RAW_STEEL,
     STEEL_ANGLE,
     ModelBuild,
+    _angle_x,
+    _angle_y,
     _group_bom,
     build_planter as build_planter_v4,
 )
 
 
-MIN_ALIGN = (Align.MIN, Align.MIN, Align.MIN)
 CYLINDER_ALIGN = (Align.CENTER, Align.CENTER, Align.MIN)
 
 
 def _panel_screw_symbol(cfg: PlanterConfig):
+    """Symbolic screw entering upward through the bracket into the batten."""
     shaft = Cylinder(
         cfg.panel_mount_screw_diameter / 2,
         cfg.panel_mount_screw_length,
@@ -45,8 +47,6 @@ def _copy_and_shift_existing(child, cfg: PlanterConfig):
     if inset == 0:
         return copied
 
-    # Timber parts are named FW/FB, RW/RB, LW/LB and QW/QB. Do not move
-    # structural Rxx rails or any other similarly prefixed part.
     if label.startswith(("FW", "FB")):
         return Pos(0, inset, 0) * copied
     if label.startswith(("RW", "RB")):
@@ -77,6 +77,7 @@ def _add_part(
     shape.color = color
     shapes.append(shape)
     viewer_nodes.append(part_id)
+
     part: dict[str, Any] = {
         "id": part_id,
         "name": name,
@@ -95,111 +96,112 @@ def _add_part(
 def _bracket_shape(
     cfg: PlanterConfig,
     face: str,
-    level: str,
+    batten_z: float,
+    end: str,
 ):
-    """Create one 20x20x3 angle bracket in its final absolute position."""
-    length = cfg.panel_bracket_length
+    """Return one small L bracket at a batten end.
+
+    The angle is oriented like a tiny shelf:
+    - vertical leg against the inner face of the 40x40 upright;
+    - horizontal leg directly under the timber batten;
+    - its extrusion width follows the batten depth.
+
+    Adjacent faces therefore use different faces of the same corner post and
+    never occupy the same volume.
+    """
+    p = cfg.frame_size
     leg = cfg.panel_bracket_leg
     wall = cfg.panel_bracket_wall
-    start = (cfg.length - length) / 2
+    width = cfg.panel_bracket_width
+    z = batten_z - leg
 
-    lower_z = cfg.bottom_frame_z + cfg.frame_size
-    if level == "lower":
-        vertical_z = lower_z
-        shelf_z = lower_z
-    else:
-        vertical_z = cfg.top_frame_z - leg
-        shelf_z = cfg.top_frame_z - wall
-
-    front_back = cfg.panel_back_offset
-    rear_back = cfg.depth - cfg.panel_back_offset
-    left_back = cfg.panel_back_offset
-    right_back = cfg.length - cfg.panel_back_offset
+    front_depth = cfg.panel_batten_front_offset
+    rear_depth = cfg.depth - cfg.panel_batten_front_offset - cfg.batten_thickness
+    left_depth = cfg.panel_batten_front_offset
+    right_depth = cfg.length - cfg.panel_batten_front_offset - cfg.batten_thickness
 
     if face == "front":
-        shelf = Pos(start, front_back - leg, shelf_z) * Box(
-            length, leg, wall, align=MIN_ALIGN
+        y = front_depth
+        if end == "left":
+            return Pos(p, y, z) * _angle_y(width, leg, wall, False, True)
+        return Pos(cfg.length - p - leg, y, z) * _angle_y(
+            width, leg, wall, True, True
         )
-        vertical = Pos(start, front_back, vertical_z) * Box(
-            length, wall, leg, align=MIN_ALIGN
-        )
-    elif face == "rear":
-        shelf = Pos(start, rear_back, shelf_z) * Box(
-            length, leg, wall, align=MIN_ALIGN
-        )
-        vertical = Pos(start, rear_back - wall, vertical_z) * Box(
-            length, wall, leg, align=MIN_ALIGN
-        )
-    elif face == "left":
-        shelf = Pos(left_back - leg, start, shelf_z) * Box(
-            leg, length, wall, align=MIN_ALIGN
-        )
-        vertical = Pos(left_back, start, vertical_z) * Box(
-            wall, length, leg, align=MIN_ALIGN
-        )
-    elif face == "right":
-        shelf = Pos(right_back, start, shelf_z) * Box(
-            leg, length, wall, align=MIN_ALIGN
-        )
-        vertical = Pos(right_back - wall, start, vertical_z) * Box(
-            wall, length, leg, align=MIN_ALIGN
-        )
-    else:
-        raise ValueError(f"Unsupported panel face: {face}")
 
-    return Compound(children=[shelf, vertical])
+    if face == "rear":
+        y = rear_depth
+        if end == "left":
+            return Pos(p, y, z) * _angle_y(width, leg, wall, False, True)
+        return Pos(cfg.length - p - leg, y, z) * _angle_y(
+            width, leg, wall, True, True
+        )
+
+    if face == "left":
+        x = left_depth
+        if end == "front":
+            return Pos(x, p, z) * _angle_x(width, leg, wall, False, True)
+        return Pos(x, cfg.depth - p - leg, z) * _angle_x(
+            width, leg, wall, True, True
+        )
+
+    if face == "right":
+        x = right_depth
+        if end == "front":
+            return Pos(x, p, z) * _angle_x(width, leg, wall, False, True)
+        return Pos(x, cfg.depth - p - leg, z) * _angle_x(
+            width, leg, wall, True, True
+        )
+
+    raise ValueError(f"Unsupported panel face: {face}")
 
 
-def _screw_shapes_for_bracket(
+def _screw_shape_for_bracket(
     cfg: PlanterConfig,
     face: str,
-    level: str,
+    batten_z: float,
+    end: str,
 ):
-    screw = _panel_screw_symbol(cfg)
-    half_spacing = cfg.panel_bracket_screw_spacing / 2
-    centre = cfg.length / 2
-    along = (centre - half_spacing, centre + half_spacing)
-    z = (
-        cfg.bottom_frame_z + cfg.frame_size + cfg.panel_bracket_leg / 2
-        if level == "lower"
-        else cfg.top_frame_z - cfg.panel_bracket_leg / 2
-    )
+    """Place one vertical screw through the horizontal bracket leg."""
+    p = cfg.frame_size
+    leg = cfg.panel_bracket_leg
+    width = cfg.panel_bracket_width
     wall = cfg.panel_bracket_wall
+    screw = _panel_screw_symbol(cfg)
 
-    front_back = cfg.panel_back_offset
-    rear_back = cfg.depth - cfg.panel_back_offset
-    left_back = cfg.panel_back_offset
-    right_back = cfg.length - cfg.panel_back_offset
+    z = batten_z - wall
 
-    result = []
-    if face == "front":
-        for x in along:
-            result.append(Pos(x, front_back + wall, z) * Rot(90, 0, 0) * screw)
-    elif face == "rear":
-        for x in along:
-            result.append(Pos(x, rear_back - wall, z) * Rot(-90, 0, 0) * screw)
-    elif face == "left":
-        for y in along:
-            result.append(Pos(left_back + wall, y, z) * Rot(0, -90, 0) * screw)
-    elif face == "right":
-        for y in along:
-            result.append(Pos(right_back - wall, y, z) * Rot(0, 90, 0) * screw)
-    return result
+    front_depth = cfg.panel_batten_front_offset
+    rear_depth = cfg.depth - cfg.panel_batten_front_offset - cfg.batten_thickness
+    left_depth = cfg.panel_batten_front_offset
+    right_depth = cfg.length - cfg.panel_batten_front_offset - cfg.batten_thickness
+
+    if face in ("front", "rear"):
+        x = p + leg / 2 if end == "left" else cfg.length - p - leg / 2
+        y0 = front_depth if face == "front" else rear_depth
+        y = y0 + width / 2
+        return Pos(x, y, z) * screw
+
+    x0 = left_depth if face == "left" else right_depth
+    x = x0 + width / 2
+    y = p + leg / 2 if end == "front" else cfg.depth - p - leg / 2
+    return Pos(x, y, z) * screw
 
 
 def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     cfg = config or PlanterConfig()
 
-    if cfg.panel_brackets_per_face != 2:
-        raise ValueError("v5 models exactly two panel brackets per face")
-    if cfg.panel_bracket_fasteners_each != 2:
-        raise ValueError("v5 models exactly two fasteners per panel bracket")
+    if cfg.panel_brackets_per_batten != 2:
+        raise ValueError("This revision models exactly two brackets per timber batten")
+    if cfg.panel_battens_per_face != 2:
+        raise ValueError("This revision models exactly two battens per timber face")
+    if cfg.panel_bracket_width > cfg.batten_thickness:
+        raise ValueError("Panel bracket width cannot exceed the timber batten depth")
     if cfg.panel_back_offset > cfg.frame_size:
         raise ValueError(
             "Timber panel inner face lies behind the inner steel face; adjust panel_outer_inset"
         )
-    if cfg.panel_back_offset < cfg.panel_bracket_leg:
-        raise ValueError("Panel is too shallow for the selected angle-bracket leg")
+    if cfg.panel_batten_front_offset < 0:
+        raise ValueError("Invalid timber panel depth offset")
 
     base = build_planter_v4(cfg)
 
@@ -221,39 +223,56 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
 
     bracket_index = 1
     fastener_index = 1
-    for face in ("front", "rear", "left", "right"):
-        for level in ("lower", "upper"):
-            bracket_id = f"PB{bracket_index:02d}"
-            bracket = _bracket_shape(cfg, face, level)
-            _add_part(
-                shapes,
-                parts,
-                panel_mount_nodes,
-                bracket_id,
-                f"{face.title()} panel {level} centred mounting bracket",
-                bracket,
-                "panel_mount_bracket",
-                STEEL_ANGLE,
-                f"{cfg.panel_bracket_leg:g}x{cfg.panel_bracket_leg:g}x{cfg.panel_bracket_wall:g} mm angle",
-                f"{cfg.panel_bracket_length:g} mm",
-                RAW_STEEL,
-                product_id=P_ANGLE_20,
-                face=face,
-                level=level,
-                note=(
-                    "centred on this face, far from both corners; one leg is welded to the "
-                    "horizontal 40x40 rail and the other bears against the timber batten"
-                ),
-            )
 
-            for screw_shape in _screw_shapes_for_bracket(cfg, face, level):
+    faces_and_ends = {
+        "front": ("left", "right"),
+        "rear": ("left", "right"),
+        "left": ("front", "rear"),
+        "right": ("front", "rear"),
+    }
+
+    for face, ends in faces_and_ends.items():
+        for level, batten_z in (
+            ("lower", cfg.batten_z_low),
+            ("upper", cfg.batten_z_high),
+        ):
+            for end in ends:
+                bracket_id = f"PB{bracket_index:02d}"
+                bracket = _bracket_shape(cfg, face, batten_z, end)
+                _add_part(
+                    shapes,
+                    parts,
+                    panel_mount_nodes,
+                    bracket_id,
+                    f"{face.title()} {level} batten {end} end bracket",
+                    bracket,
+                    "panel_mount_bracket",
+                    STEEL_ANGLE,
+                    (
+                        f"{cfg.panel_bracket_leg:g}x{cfg.panel_bracket_leg:g}x"
+                        f"{cfg.panel_bracket_wall:g} mm angle"
+                    ),
+                    f"{cfg.panel_bracket_width:g} mm",
+                    RAW_STEEL,
+                    product_id=P_ANGLE_20,
+                    face=face,
+                    level=level,
+                    end=end,
+                    note=(
+                        "small vertical L at the batten end: one leg is welded to the "
+                        "40x40 upright and the horizontal leg sits directly under the "
+                        "timber batten"
+                    ),
+                )
+
                 fastener_id = f"PF{fastener_index:02d}"
+                screw_shape = _screw_shape_for_bracket(cfg, face, batten_z, end)
                 _add_part(
                     shapes,
                     parts,
                     panel_mount_nodes,
                     fastener_id,
-                    f"{face.title()} panel {level} concealed M5 fastener {fastener_index}",
+                    f"{face.title()} {level} batten {end} concealed fastener",
                     screw_shape,
                     "panel_mount_fastener",
                     "Stainless M5 screw + threaded wood insert",
@@ -262,14 +281,16 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
                     FASTENER,
                     face=face,
                     level=level,
+                    end=end,
                     note=(
-                        "accessed from inside; passes through the angle vertical leg into a "
-                        "threaded insert in the horizontal timber batten"
+                        "inserted upward from inside through the bracket shelf into the "
+                        "underside of the horizontal timber batten; bracket remains welded "
+                        "to the steel post when the panel is removed"
                     ),
                 )
-                fastener_index += 1
 
-            bracket_index += 1
+                bracket_index += 1
+                fastener_index += 1
 
     assembly = Compound(label="square-planter-600-v5", children=shapes)
 
@@ -281,25 +302,24 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     metadata["parts"] = parts
 
     derived = metadata["derived"]
-    derived["panel_frame_fixings_each"] = (
-        cfg.panel_brackets_per_face * cfg.panel_bracket_fasteners_each
-    )
-    derived["panel_brackets_each"] = cfg.panel_brackets_per_face
+    derived["panel_frame_fixings_each"] = cfg.panel_bracket_count_per_face
+    derived["panel_brackets_each"] = cfg.panel_bracket_count_per_face
+    derived["panel_brackets_per_batten"] = cfg.panel_brackets_per_batten
     derived["panel_outer_inset_mm"] = cfg.panel_outer_inset
     derived["panel_total_depth_mm"] = cfg.panel_total_depth
     derived["panel_back_offset_mm"] = cfg.panel_back_offset
 
     for group in metadata["viewer"]["groups"]:
         if group["id"] == "panel_mounts":
-            group["label"] = "Panel mounting brackets"
+            group["label"] = "Panel end brackets"
             group["node_names"] = panel_mount_nodes
             group["offset_mm"] = [0, 0, 180]
 
     for product in metadata["products"]:
         if product["id"] == P_ANGLE_20:
             product["note"] = (
-                "also supplies 8 centred 60 mm timber-panel brackets; total angle use is "
-                "about 1.92 m before kerf"
+                "also supplies 16 x 20 mm timber-panel end brackets; total angle use "
+                "is about 1.76 m before cutting kerf"
             )
         elif product["id"] == P_FLAT_30:
             product["note"] = "used for the continuous geotextile clamp frame"
@@ -307,13 +327,13 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     for assembly_meta in metadata["assemblies"]:
         if assembly_meta["id"] == "AS01":
             assembly_meta["contains"] = (
-                "40x40 main frame, integral post-closing top flaps, five-rail bag platform, "
-                "bag ledges, tray guides and centred panel brackets"
+                "40x40 main frame, integral post-closing top flaps, five-rail bag "
+                "platform, bag ledges, tray guides and small post-mounted panel brackets"
             )
         elif assembly_meta["id"] == "AS02":
             assembly_meta["contains"] = (
-                "7 vertical slats + 2 horizontal battens per face + 2 centred angle brackets "
-                "+ 4 concealed M5 fasteners"
+                "7 vertical slats + 2 horizontal battens per face + 2 end brackets "
+                "per batten + 4 concealed removable fasteners"
             )
 
     metadata["joints"] = [
@@ -325,18 +345,19 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
             "type": "mechanical",
             "name": "Timber panel to steel frame",
             "spec": (
-                "2 centred 20x20x3 angle brackets per panel: lower bracket welded to the "
-                "top of that face's lower 40x40 rail, upper bracket welded under that face's "
-                "top 40x40 rail; each bracket uses 2 concealed M5 screws into threaded "
-                "inserts in the corresponding timber batten. Bracket depth follows the "
-                "panel back plane, so slat thickness/alignment can change without corner interference."
+                "4 small 20x20x3 angle brackets per panel, two per horizontal batten. "
+                "Each bracket is located at a batten end: its vertical leg is welded to "
+                "the corresponding 40x40 upright and its horizontal leg sits under the "
+                "batten. One concealed M5 screw goes upward into a threaded insert in "
+                "the batten. Adjacent faces use different post faces, so their brackets "
+                "do not collide. Bracket depth follows the timber panel position."
             ),
         }
     )
 
     metadata["service"]["panel_removal"] = (
-        "remove four M5 screws from inside; the two centred angle brackets remain welded to "
-        "that face's horizontal steel rails"
+        "remove four concealed M5 screws from inside; the four small L brackets remain "
+        "welded to the two vertical steel posts"
     )
 
     notes = [
@@ -344,23 +365,19 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         for note in metadata["fabrication_notes"]
         if "four welded 30x3 steel tabs" not in note
         and "panel mounting tabs reuse" not in note.lower()
+        and "small centred angle brackets" not in note.lower()
+        and "each bracket carries two concealed" not in note.lower()
+        and "panel depth is parameterised" not in note.lower()
     ]
     notes.extend(
         [
-            "Each timber panel now uses only two small centred angle brackets: one on its lower horizontal steel rail and one under its upper horizontal steel rail; no mounting hardware enters either corner.",
-            "Each bracket carries two concealed M5 screws into the matching timber batten, so there are four removable fasteners per panel.",
-            "Panel depth is parameterised independently from slat thickness. With panel_outer_inset=0 the timber is outer-flush; if thinner slats are later used, the brackets simply move in depth to meet the batten back face.",
+            "Each horizontal timber batten is held by two tiny end brackets, one at each vertical 40x40 post; there are four brackets per panel.",
+            "Each bracket is a 20 mm cut of 20x20x3 angle: vertical leg welded to the post, horizontal leg directly under the batten, with one concealed upward M5 fastener.",
+            "Perpendicular faces no longer share bracket volume: each face uses its own faces of the vertical posts, so the corner remains geometrically clean.",
+            "Panel depth remains parameterised. Changing slat thickness or the desired flush position only moves these small brackets along the post depth; their basic geometry does not change.",
         ]
     )
     metadata["fabrication_notes"] = notes
-
-    metadata["notes"] = [
-        note.replace(
-            "final M5 insert model",
-            "final M5 insert model and preferred panel flush position",
-        )
-        for note in metadata["notes"]
-    ]
 
     return ModelBuild(
         shape=assembly,
