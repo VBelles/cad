@@ -30,7 +30,6 @@ class PlanterConfig:
     bag_fold_thickness: float = 1.0  # visual CAD representation of doubled geotextile
 
     # Continuous clamping frame: Obramat S275JR flat bar 30x3 mm.
-    # It clamps the folded geotextile against the 20x20 tube continuously.
     bag_clamp_width: float = 30.0
     bag_clamp_thickness: float = 3.0
     bag_clamp_overhang: float = 5.0
@@ -56,8 +55,8 @@ class PlanterConfig:
     drain_local_x: float = 400.0
     drain_local_y: float = 450.0
 
-    # Decorative timber panels. Current visual uses 60x20 mm stock, but panel
-    # depth is deliberately parameterised so slats can later become 10/15 mm.
+    # Decorative timber panels. Current visual uses 60x20 mm slats, but the
+    # thickness is deliberately independent from the steel mounting geometry.
     slat_width: float = 60.0
     slat_thickness: float = 20.0
     slat_height: float = 430.0
@@ -66,35 +65,42 @@ class PlanterConfig:
     slat_z: float = 125.0
 
     # Two concealed horizontal timber battens per panel; same 60x20 stock for now.
-    # They overlap the lower/top steel rails vertically so the two small mounting
-    # brackets can bolt directly into the battens without corner hardware.
     batten_height: float = 60.0
     batten_thickness: float = 20.0
-    batten_z_low: float = 110.0
-    batten_z_high: float = 510.0
+    batten_z_low: float = 185.0
+    batten_z_high: float = 435.0
 
     # Panel depth/alignment. 0 = timber outer face flush with the outer steel face.
-    # For an inner-flush panel set this to frame_size - panel_total_depth.
+    # If thinner slats are later used this can remain 0 for outer-flush, or be
+    # increased to move the complete timber panel inward.
     panel_outer_inset: float = 0.0
 
-    # Two small 20x20x3 angle brackets per timber face: one on the lower rail and
-    # one on the upper rail, both centred on that face. Each bracket uses two M5
-    # fasteners into the timber batten. Moving the bracket in depth accommodates
-    # a different slat thickness without changing the steel corner geometry.
-    panel_bracket_length: float = 60.0
+    # Panel attachment: two small 20x20x3 angle brackets at the ends of EACH
+    # horizontal batten (4 brackets per face). Each angle is cut only 20 mm wide:
+    # its vertical leg is welded to the 40x40 upright and its horizontal leg sits
+    # below the timber batten. One concealed screw goes upward into the batten.
+    # The bracket moves along the post depth with the panel, so slat thickness can
+    # change without changing the corner/post geometry.
+    panel_bracket_width: float = 20.0
     panel_bracket_leg: float = 20.0
     panel_bracket_wall: float = 3.0
+    panel_brackets_per_batten: int = 2
+    panel_battens_per_face: int = 2
+
+    # Compatibility with the previous centred-bracket wrapper during atomic-ish
+    # repository updates. These are ignored by the active end-bracket geometry.
+    panel_bracket_length: float = 60.0
     panel_brackets_per_face: int = 2
     panel_bracket_fasteners_each: int = 2
     panel_bracket_screw_spacing: float = 30.0
+
     panel_mount_screw_diameter: float = 5.0
     panel_mount_screw_length: float = 16.0
     panel_mount_head_radius: float = 4.5
     panel_mount_head_thickness: float = 3.0
 
-    # Legacy tab dimensions are retained only because the v4 base builder still
-    # creates them before the v5 wrapper removes/replaces them. They are not part
-    # of the exported v5 design and can disappear when planter.py is consolidated.
+    # Legacy v4 tab dimensions remain only because planter.py creates them before
+    # the active wrapper removes/replaces them. They are not exported.
     panel_tab_length: float = 50.0
     panel_tab_height: float = 30.0
     panel_tab_thickness: float = 3.0
@@ -185,6 +191,15 @@ class PlanterConfig:
     def panel_back_offset(self) -> float:
         """Distance from the exterior steel face to the inner face of a panel."""
         return self.panel_outer_inset + self.panel_total_depth
+
+    @property
+    def panel_batten_front_offset(self) -> float:
+        """Distance from exterior steel face to the outer face of the batten."""
+        return self.panel_outer_inset + self.slat_thickness
+
+    @property
+    def panel_bracket_count_per_face(self) -> int:
+        return self.panel_brackets_per_batten * self.panel_battens_per_face
 
     @property
     def tray_side_clearance(self) -> float:
