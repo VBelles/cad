@@ -12,8 +12,12 @@ export async function createCadViewer(container, metadata, options = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe9ebed);
 
+  // glTF is Y-up. OpenCascade's exporter keeps the original CAD coordinates on
+  // child nodes and puts a -90deg X rotation on the root to convert build123d's
+  // Z-up geometry to glTF Y-up. Keep the camera/controls in standard Three.js
+  // Y-up coordinates; treating the loaded scene as Z-up rotates the planter 90°.
   const camera = new THREE.PerspectiveCamera(38, 1, 0.001, 100);
-  camera.up.set(0, 0, 1);
+  camera.up.set(0, 1, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -26,15 +30,26 @@ export async function createCadViewer(container, metadata, options = {}) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.screenSpacePanning = true;
+  controls.enableRotate = true;
+  controls.enableZoom = true;
+  controls.enablePan = true;
+
+  // Explicitly leave azimuth unrestricted: the user can rotate continuously
+  // around the complete 360° horizontal orbit. Polar limits only avoid the two
+  // mathematical singularities exactly above/below the target.
+  controls.minAzimuthAngle = -Infinity;
+  controls.maxAzimuthAngle = Infinity;
+  controls.minPolarAngle = 0.001;
+  controls.maxPolarAngle = Math.PI - 0.001;
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.2));
 
   const key = new THREE.DirectionalLight(0xffffff, 2.6);
-  key.position.set(-2, -3, 4);
+  key.position.set(-2, 4, 3);
   scene.add(key);
 
   const fill = new THREE.DirectionalLight(0xffffff, 1.4);
-  fill.position.set(3, 1, 2);
+  fill.position.set(3, 2, -1);
   scene.add(fill);
 
   const loader = new GLTFLoader();
@@ -82,25 +97,33 @@ export async function createCadViewer(container, metadata, options = {}) {
 
   camera.near = Math.max(maxDim / 500, 0.001);
   camera.far = Math.max(maxDim * 100, 10);
+  // World Y is vertical after the glTF root conversion. Positive Z looks at the
+  // planter from its front side because CAD +Y depth maps to world -Z.
   camera.position.copy(
-    assembledCenter.clone().add(new THREE.Vector3(1.25, -1.45, 1.05).multiplyScalar(maxDim * 1.25)),
+    assembledCenter.clone().add(new THREE.Vector3(1.25, 1.05, 1.45).multiplyScalar(maxDim * 1.25)),
   );
   controls.target.copy(assembledCenter);
   controls.update();
 
+  // GridHelper is already an XZ ground plane in Three.js/Y-up coordinates.
   const grid = new THREE.GridHelper(maxDim * 3, 20, 0xbfc4c8, 0xd4d7da);
-  grid.rotation.x = Math.PI / 2;
-  grid.position.z = assembledBounds.min.z - 0.002;
+  grid.position.y = assembledBounds.min.y - 0.002;
   scene.add(grid);
 
   function selectedPartOffset(partNode) {
     const box = new THREE.Box3().setFromObject(partNode);
     const center = box.getCenter(new THREE.Vector3());
-    const direction = center.clone().sub(assembledCenter);
-    direction.z *= 0.35;
-    if (direction.lengthSq() < 1e-6) direction.set(1, 0, 0.25);
-    direction.normalize();
-    return direction.multiplyScalar(
+    const directionWorld = center.clone().sub(assembledCenter);
+    directionWorld.y *= 0.35;
+    if (directionWorld.lengthSq() < 1e-6) directionWorld.set(1, 0.25, 0);
+    directionWorld.normalize();
+
+    // partNode.position is expressed in its parent's CAD-local coordinates, so
+    // transform the world-space outward direction back into that local basis.
+    const parentQuaternion = new THREE.Quaternion();
+    partNode.parent?.getWorldQuaternion(parentQuaternion);
+    const directionLocal = directionWorld.applyQuaternion(parentQuaternion.invert());
+    return directionLocal.multiplyScalar(
       (metadata.viewer?.selected_part_offset_mm ?? 260) * MM_TO_MODEL,
     );
   }
@@ -112,6 +135,8 @@ export async function createCadViewer(container, metadata, options = {}) {
     for (const groupId of activeGroups) {
       const group = groupsById.get(groupId);
       if (!group) continue;
+      // Group offsets are stored in CAD-local XYZ millimetres. Nodes preserve
+      // that local basis under the glTF root conversion, so no axis remap here.
       const offset = vectorFromMm(group.offset_mm ?? [0, 0, 0]);
       for (const nodeName of group.node_names ?? []) {
         const node = nodeByName.get(nodeName);
