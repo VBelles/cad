@@ -14,15 +14,14 @@ class PlanterConfig:
     frame_size: float = 40.0
     frame_wall: float = 1.5
     leg_clearance: float = 80.0
+    top_cap_flap_length: float = 40.0
 
     # Internal load platform: Obramat steel tube 20x20x1.5 mm.
+    # Five parallel rails directly support the geotextile bottom; drainage remains open.
     support_size: float = 20.0
     support_wall: float = 1.5
     bag_support_z: float = 120.0
-
-    # Removable perforated load-spreader plate resting on the 20x20 grid.
-    spreader_size: float = 480.0
-    spreader_thickness: float = 0.6
+    bag_support_crossbar_count: int = 5
 
     # Removable bag rim frame, supported just inside the 40 mm top border.
     bag_frame_outer: float = 500.0
@@ -47,6 +46,7 @@ class PlanterConfig:
     bag_ledge_length: float = 100.0
 
     # Removable drain tray under the lower frame, between the legs.
+    # Kept unchanged for now; material/fabrication method remains an open decision.
     tray_width: float = 510.0
     tray_depth: float = 500.0
     tray_z: float = 48.0
@@ -69,6 +69,17 @@ class PlanterConfig:
     batten_thickness: float = 20.0
     batten_z_low: float = 185.0
     batten_z_high: float = 435.0
+
+    # Four concealed panel mounts per face. Tabs are cut from the same 30x3 flat bar
+    # used for the bag clamp and welded to the inner faces of the 40x40 corner posts.
+    panel_tab_length: float = 50.0
+    panel_tab_height: float = 30.0
+    panel_tab_thickness: float = 3.0
+    panel_tab_post_overlap: float = 20.0
+    panel_mount_screw_diameter: float = 5.0
+    panel_mount_screw_length: float = 16.0
+    panel_mount_head_radius: float = 4.5
+    panel_mount_head_thickness: float = 3.0
 
     # Symbolic floor-protection inserts/caps for the 40x40 legs.
     foot_cap_visible: float = 2.0
@@ -94,16 +105,12 @@ class PlanterConfig:
         return self.bag_support_z + self.support_size
 
     @property
-    def spreader_z(self) -> float:
-        return self.support_top_z
+    def bag_inner_opening(self) -> float:
+        return self.bag_frame_outer - 2 * self.support_size
 
     @property
     def bag_bottom_z(self) -> float:
-        return self.spreader_z + self.spreader_thickness
-
-    @property
-    def bag_inner_opening(self) -> float:
-        return self.bag_frame_outer - 2 * self.support_size
+        return self.support_top_z
 
     @property
     def bag_frame_top_z(self) -> float:
@@ -116,6 +123,20 @@ class PlanterConfig:
     @property
     def bag_frame_side_cut(self) -> float:
         return self.bag_inner_opening
+
+    @property
+    def bag_xy(self) -> float:
+        return (self.length - self.bag_inner_opening) / 2
+
+    @property
+    def bag_support_clear_gap(self) -> float:
+        return (
+            self.bag_inner_opening - self.bag_support_crossbar_count * self.support_size
+        ) / (self.bag_support_crossbar_count - 1)
+
+    @property
+    def bag_support_pitch(self) -> float:
+        return self.support_size + self.bag_support_clear_gap
 
     @property
     def bag_clamp_outer(self) -> float:
