@@ -2,6 +2,8 @@ const statusEl = document.querySelector('#status');
 const summaryEl = document.querySelector('#summary');
 const bomEl = document.querySelector('#bom');
 const notesEl = document.querySelector('#notes');
+const viewer = document.querySelector('#viewer');
+const modelButtons = [...document.querySelectorAll('[data-model-src]')];
 
 const mm = new Intl.NumberFormat('en', { maximumFractionDigits: 1 });
 
@@ -13,6 +15,25 @@ function summaryItem(label, value) {
   dd.textContent = value;
   wrapper.append(dt, dd);
   return wrapper;
+}
+
+function setModel(button) {
+  const src = button.dataset.modelSrc;
+  const alt = button.dataset.modelAlt;
+  if (!src) return;
+
+  viewer.src = src;
+  if (alt) viewer.alt = alt;
+
+  for (const candidate of modelButtons) {
+    const active = candidate === button;
+    candidate.classList.toggle('active', active);
+    candidate.setAttribute('aria-pressed', String(active));
+  }
+}
+
+for (const button of modelButtons) {
+  button.addEventListener('click', () => setModel(button));
 }
 
 async function init() {
@@ -38,12 +59,13 @@ async function init() {
     summaryEl.replaceChildren(
       summaryItem('Envelope', `${mm.format(p.length)} × ${mm.format(p.depth)} × ${mm.format(p.body_height)} mm`),
       summaryItem('Main frame', `${mm.format(p.frame_size)} × ${mm.format(p.frame_size)} × ${mm.format(p.frame_wall)} mm steel`),
+      summaryItem('Leg clearance', `${mm.format(d.leg_clearance_mm)} mm`),
       summaryItem('Internal opening', `${mm.format(d.inner_opening_mm)} × ${mm.format(d.inner_opening_mm)} mm`),
       summaryItem('Bag useful space', `${mm.format(d.bag_useful_width_mm)} × ${mm.format(d.bag_useful_width_mm)} × ${mm.format(d.bag_useful_height_mm)} mm`),
-      summaryItem('Bag-frame clearance', `${mm.format(d.bag_frame_clearance_each_side_mm)} mm / side`),
-      summaryItem('Tray clearance', `${mm.format(d.tray_side_clearance_each_side_mm)} mm / side · ${mm.format(d.tray_to_support_vertical_clearance_mm)} mm vertical`),
+      summaryItem('Bag volume', `≈ ${mm.format(d.bag_volume_litres)} L`),
+      summaryItem('Tray clearance', `${mm.format(d.tray_side_clearance_each_side_mm)} mm / side · ${mm.format(d.tray_to_bottom_frame_vertical_clearance_mm)} mm above`),
+      summaryItem('Panel mounting', `${d.panel_frame_fixings_each} concealed frame fixings / face`),
       summaryItem('Parts', `${metadata.parts.length}`),
-      summaryItem('Service face', metadata.service?.service_face ?? '—'),
     );
 
     bomEl.replaceChildren(...bom.map((item) => {

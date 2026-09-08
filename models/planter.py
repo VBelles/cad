@@ -11,6 +11,7 @@ from .parameters import PlanterConfig
 @dataclass
 class ModelBuild:
     shape: Compound
+    exploded_shape: Compound
     bom: list[dict[str, Any]]
     metadata: dict[str, Any]
 
@@ -20,15 +21,17 @@ GALVANISED = Color(0.68, 0.70, 0.72)
 WOOD = Color(0.58, 0.38, 0.20)
 GEOTEXTILE = Color(0.20, 0.21, 0.22)
 DRAIN = Color(0.12, 0.13, 0.14)
+POLYMER = Color(0.08, 0.08, 0.09)
+
 MIN_ALIGN = (Align.MIN, Align.MIN, Align.MIN)
 CYLINDER_ALIGN = (Align.CENTER, Align.CENTER, Align.MIN)
 
 STEEL_TUBE_40 = "Raw steel tube · Obramat 40x40x1.5"
 STEEL_TUBE_20 = "Decapated steel tube · Obramat 20x20x1.5"
 STEEL_ANGLE = "Raw steel angle · Obramat 20x20x3"
-STEEL_FLAT = "Raw steel flat bar · Obramat 20x4"
-TIMBER = "Planed laminated fir · Obramat 60x20"
+TIMBER = "Planed fir · Obramat 60x20"
 TRAY_STEEL = "Galvanised steel sheet · 1 mm"
+FOOT_CAP = "Polyethylene insert cap · 40x40"
 
 
 def _hollow_tube(length: float, size: float, wall: float, axis: str, label: str):
@@ -64,14 +67,7 @@ def _place(shape, position: tuple[float, float, float], label: str, color: Color
     return placed
 
 
-def _angle_y(
-    length: float,
-    leg: float,
-    wall: float,
-    mirrored: bool = False,
-    shelf_at_top: bool = True,
-):
-    """L angle running along Y. shelf_at_top=False is used for upward ledges."""
+def _angle_y(length: float, leg: float, wall: float, mirrored: bool = False, shelf_at_top: bool = True):
     shelf_z = leg - wall if shelf_at_top else 0
     shelf = Pos(0, 0, shelf_z) * Box(leg, length, wall, align=MIN_ALIGN)
     vertical_x = leg - wall if mirrored else 0
@@ -79,14 +75,7 @@ def _angle_y(
     return Compound(children=[shelf, vertical])
 
 
-def _angle_x(
-    length: float,
-    leg: float,
-    wall: float,
-    mirrored: bool = False,
-    shelf_at_top: bool = True,
-):
-    """L angle running along X. shelf_at_top=False is used for upward ledges."""
+def _angle_x(length: float, leg: float, wall: float, mirrored: bool = False, shelf_at_top: bool = True):
     shelf_z = leg - wall if shelf_at_top else 0
     shelf = Pos(0, 0, shelf_z) * Box(length, leg, wall, align=MIN_ALIGN)
     vertical_y = leg - wall if mirrored else 0
@@ -136,11 +125,14 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
     if cfg.bag_frame_outer >= cfg.inner_opening:
         raise ValueError("Bag frame requires clearance inside the main frame")
     if cfg.tray_width >= cfg.inner_opening or cfg.tray_depth >= cfg.inner_opening:
-        raise ValueError("Drain tray must fit through the rear frame opening")
+        raise ValueError("Drain tray must fit between the legs")
     if cfg.slat_side_margin < 0:
         raise ValueError("Cladding layout does not fit between the corner posts")
+    if cfg.tray_to_bottom_frame_clearance <= 0:
+        raise ValueError("Drain tray collides with the lower frame")
 
-    shapes = []
+    all_shapes: list[Any] = []
+    exploded_groups: dict[str, list[Any]] = {"body": [], "bag": [], "tray": []}
     parts: list[dict[str, Any]] = []
 
     def record(
@@ -163,6 +155,24 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         entry.update(extra)
         parts.append(entry)
 
+    def add_shape(
+        part_id: str,
+        name: str,
+        shape,
+        position: tuple[float, float, float],
+        category: str,
+        material: str,
+        profile: str,
+        cut: str,
+        color: Color,
+        group: str = "body",
+        **extra: Any,
+    ) -> None:
+        placed = _place(shape, position, part_id, color)
+        all_shapes.append(placed)
+        exploded_groups[group].append(placed)
+        record(part_id, name, category, material, profile, cut, **extra)
+
     def add_tube(
         part_id: str,
         name: str,
@@ -173,16 +183,19 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         position: tuple[float, float, float],
         category: str,
         material: str,
+        group: str = "body",
     ) -> None:
-        shape = _hollow_tube(length, size, wall, axis, part_id)
-        shapes.append(_place(shape, position, part_id, RAW_STEEL))
-        record(
+        add_shape(
             part_id,
             name,
+            _hollow_tube(length, size, wall, axis, part_id),
+            position,
             category,
             material,
             f"{size:g}x{size:g}x{wall:g} mm square tube",
             f"{length:g} mm",
+            RAW_STEEL,
+            group=group,
             length_mm=length,
         )
 
@@ -196,241 +209,180 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         profile: str,
         cut: str,
         color: Color,
+        group: str = "body",
         **extra: Any,
     ) -> None:
-        shape = Box(*dimensions, align=MIN_ALIGN)
-        shapes.append(_place(shape, position, part_id, color))
-        record(part_id, name, category, material, profile, cut, **extra)
+        add_shape(
+            part_id,
+            name,
+            Box(*dimensions, align=MIN_ALIGN),
+            position,
+            category,
+            material,
+            profile,
+            cut,
+            color,
+            group=group,
+            **extra,
+        )
 
-    def add_shape(
-        part_id: str,
-        name: str,
-        shape,
-        position: tuple[float, float, float],
-        category: str,
-        material: str,
-        profile: str,
-        cut: str,
-        color: Color,
-        **extra: Any,
-    ) -> None:
-        shapes.append(_place(shape, position, part_id, color))
-        record(part_id, name, category, material, profile, cut, **extra)
-
-    # MAIN WELDED FRAME -------------------------------------------------
-    # Full-height corner posts define the 600x600x600 envelope. Every 520 mm
-    # rail is square-cut and butts against a post face; no main members overlap.
+    # MAIN FRAME --------------------------------------------------------
+    # The four 600 mm posts are continuous: their lower 80 mm become the legs.
     uprights = [
-        ("U01", "Front-left upright", (0, 0, 0)),
-        ("U02", "Front-right upright", (cfg.length - p, 0, 0)),
-        ("U03", "Rear-left upright", (0, cfg.depth - p, 0)),
-        ("U04", "Rear-right upright", (cfg.length - p, cfg.depth - p, 0)),
+        ("U01", "Front-left upright / leg", (0, 0, 0)),
+        ("U02", "Front-right upright / leg", (cfg.length - p, 0, 0)),
+        ("U03", "Rear-left upright / leg", (0, cfg.depth - p, 0)),
+        ("U04", "Rear-right upright / leg", (cfg.length - p, cfg.depth - p, 0)),
     ]
     for part_id, name, position in uprights:
         add_tube(
-            part_id,
-            name,
-            cfg.body_height,
-            p,
-            cfg.frame_wall,
-            "z",
-            position,
-            "main_frame",
-            STEEL_TUBE_40,
+            part_id, name, cfg.body_height, p, cfg.frame_wall, "z", position,
+            "main_frame", STEEL_TUBE_40
         )
 
-    top_z = cfg.body_height - p
     rails = [
-        ("R01", "Front bottom rail", "x", (p, 0, 0)),
-        ("R02", "Rear bottom rail", "x", (p, cfg.depth - p, 0)),
-        ("R03", "Left bottom rail", "y", (0, p, 0)),
-        ("R04", "Right bottom rail", "y", (cfg.length - p, p, 0)),
-        ("R05", "Front top rail", "x", (p, 0, top_z)),
-        ("R06", "Rear top rail", "x", (p, cfg.depth - p, top_z)),
-        ("R07", "Left top rail", "y", (0, p, top_z)),
-        ("R08", "Right top rail", "y", (cfg.length - p, p, top_z)),
+        ("R01", "Front lower rail", "x", (p, 0, cfg.bottom_frame_z)),
+        ("R02", "Rear lower rail", "x", (p, cfg.depth - p, cfg.bottom_frame_z)),
+        ("R03", "Left lower rail", "y", (0, p, cfg.bottom_frame_z)),
+        ("R04", "Right lower rail", "y", (cfg.length - p, p, cfg.bottom_frame_z)),
+        ("R05", "Front top rail", "x", (p, 0, cfg.top_frame_z)),
+        ("R06", "Rear top rail", "x", (p, cfg.depth - p, cfg.top_frame_z)),
+        ("R07", "Left top rail", "y", (0, p, cfg.top_frame_z)),
+        ("R08", "Right top rail", "y", (cfg.length - p, p, cfg.top_frame_z)),
     ]
     for part_id, name, axis, position in rails:
         add_tube(
-            part_id,
-            name,
-            cfg.frame_rail_length,
-            p,
-            cfg.frame_wall,
-            axis,
-            position,
-            "main_frame",
-            STEEL_TUBE_40,
+            part_id, name, cfg.frame_rail_length, p, cfg.frame_wall, axis, position,
+            "main_frame", STEEL_TUBE_40
         )
 
-    # LOAD PLATFORM FOR THE BAG ---------------------------------------
-    # Cross rails sit partly within the Y footprint of the front/rear posts, so
-    # their 20x20 end faces genuinely butt against the X=40 / X=560 post faces.
-    # Three longitudinal rails then butt between the two cross rails.
-    support_cross_y_front = p - s
-    support_cross_y_rear = cfg.depth - p
-    add_tube(
-        "S01",
-        "Front bag-support cross rail",
-        cfg.frame_rail_length,
-        s,
-        cfg.support_wall,
-        "x",
-        (p, support_cross_y_front, cfg.bag_support_z),
-        "bag_support",
-        STEEL_TUBE_20,
-    )
-    add_tube(
-        "S02",
-        "Rear bag-support cross rail",
-        cfg.frame_rail_length,
-        s,
-        cfg.support_wall,
-        "x",
-        (p, support_cross_y_rear, cfg.bag_support_z),
-        "bag_support",
-        STEEL_TUBE_20,
-    )
+    # Floor-protection caps are shown symbolically within the steel footprint.
+    for index, (x, y) in enumerate(
+        ((0, 0), (cfg.length - p, 0), (0, cfg.depth - p), (cfg.length - p, cfg.depth - p)),
+        start=1,
+    ):
+        add_box(
+            f"FC{index:02d}",
+            f"40x40 leg insert cap {index}",
+            (p, p, cfg.foot_cap_visible),
+            (x, y, 0),
+            "foot",
+            FOOT_CAP,
+            "40x40 insert cap",
+            "1 pc",
+            POLYMER,
+            note="symbolic visible pad; insert body is inside the tube",
+        )
 
-    longitudinal_start_y = support_cross_y_front + s
-    longitudinal_length = support_cross_y_rear - longitudinal_start_y
+    # BAG LOAD PLATFORM -------------------------------------------------
+    # Front/rear 20x20 rails sit directly on the lower 40x40 rails.
+    add_tube(
+        "S01", "Front bag-support cross rail", cfg.inner_opening, s, cfg.support_wall,
+        "x", (p, p - s, cfg.bag_support_z), "bag_support", STEEL_TUBE_20
+    )
+    add_tube(
+        "S02", "Rear bag-support cross rail", cfg.inner_opening, s, cfg.support_wall,
+        "x", (p, cfg.depth - p, cfg.bag_support_z), "bag_support", STEEL_TUBE_20
+    )
     for index, x in enumerate((80.0, 290.0, 500.0), start=3):
         add_tube(
             f"S{index:02d}",
             ("Left" if index == 3 else "Centre" if index == 4 else "Right")
             + " bag-support rail",
-            longitudinal_length,
+            cfg.inner_opening,
             s,
             cfg.support_wall,
             "y",
-            (x, longitudinal_start_y, cfg.bag_support_z),
+            (x, p, cfg.bag_support_z),
             "bag_support",
             STEEL_TUBE_20,
         )
 
-    # REMOVABLE UPPER BAG FRAME ---------------------------------------
-    # 500 mm outside dimension leaves 10 mm clearance per side in the 520 mm
-    # opening. The side rails are 460 mm to avoid overlap with front/rear rails.
+    # BAG FRAME SUPPORT LEDGES -----------------------------------------
+    # Four short 20x20x3 angles are welded to the inner faces of the top rails.
+    # Their shelf top is Z=563, so the removable 20x20 frame sits inside the
+    # 40 mm top border and remains visually hidden from normal viewing angles.
+    ledge_z = cfg.top_frame_z
+    ledges = [
+        (
+            "A01", "Front bag-frame ledge",
+            _angle_x(cfg.bag_ledge_length, cfg.angle_leg, cfg.angle_wall, False, False),
+            ((cfg.length - cfg.bag_ledge_length) / 2, p, ledge_z),
+        ),
+        (
+            "A02", "Rear bag-frame ledge",
+            _angle_x(cfg.bag_ledge_length, cfg.angle_leg, cfg.angle_wall, True, False),
+            ((cfg.length - cfg.bag_ledge_length) / 2, cfg.depth - p - cfg.angle_leg, ledge_z),
+        ),
+        (
+            "A03", "Left bag-frame ledge",
+            _angle_y(cfg.bag_ledge_length, cfg.angle_leg, cfg.angle_wall, False, False),
+            (p, (cfg.depth - cfg.bag_ledge_length) / 2, ledge_z),
+        ),
+        (
+            "A04", "Right bag-frame ledge",
+            _angle_y(cfg.bag_ledge_length, cfg.angle_leg, cfg.angle_wall, True, False),
+            (cfg.length - p - cfg.angle_leg, (cfg.depth - cfg.bag_ledge_length) / 2, ledge_z),
+        ),
+    ]
+    for part_id, name, shape, position in ledges:
+        add_shape(
+            part_id, name, shape, position,
+            "bag_frame_support", STEEL_ANGLE,
+            f"{cfg.angle_leg:g}x{cfg.angle_leg:g}x{cfg.angle_wall:g} mm angle",
+            f"{cfg.bag_ledge_length:g} mm",
+            RAW_STEEL,
+            length_mm=cfg.bag_ledge_length,
+        )
+
+    # REMOVABLE BAG + FRAME --------------------------------------------
     bag_offset = (cfg.length - cfg.bag_frame_outer) / 2
     add_tube(
-        "B01",
-        "Bag frame front rail",
-        cfg.bag_frame_outer,
-        s,
-        cfg.support_wall,
-        "x",
-        (bag_offset, bag_offset, cfg.bag_frame_z),
-        "bag_frame",
-        STEEL_TUBE_20,
+        "B01", "Bag frame front rail", cfg.bag_frame_outer, s, cfg.support_wall,
+        "x", (bag_offset, bag_offset, cfg.bag_frame_z),
+        "bag_frame", STEEL_TUBE_20, group="bag"
     )
     add_tube(
-        "B02",
-        "Bag frame rear rail",
-        cfg.bag_frame_outer,
-        s,
-        cfg.support_wall,
-        "x",
-        (bag_offset, bag_offset + cfg.bag_frame_outer - s, cfg.bag_frame_z),
-        "bag_frame",
-        STEEL_TUBE_20,
+        "B02", "Bag frame rear rail", cfg.bag_frame_outer, s, cfg.support_wall,
+        "x", (bag_offset, bag_offset + cfg.bag_frame_outer - s, cfg.bag_frame_z),
+        "bag_frame", STEEL_TUBE_20, group="bag"
     )
     add_tube(
-        "B03",
-        "Bag frame left rail",
-        cfg.bag_frame_side_cut,
-        s,
-        cfg.support_wall,
-        "y",
-        (bag_offset, bag_offset + s, cfg.bag_frame_z),
-        "bag_frame",
-        STEEL_TUBE_20,
+        "B03", "Bag frame left rail", cfg.bag_frame_side_cut, s, cfg.support_wall,
+        "y", (bag_offset, bag_offset + s, cfg.bag_frame_z),
+        "bag_frame", STEEL_TUBE_20, group="bag"
     )
     add_tube(
-        "B04",
-        "Bag frame right rail",
-        cfg.bag_frame_side_cut,
-        s,
-        cfg.support_wall,
-        "y",
-        (bag_offset + cfg.bag_frame_outer - s, bag_offset + s, cfg.bag_frame_z),
-        "bag_frame",
-        STEEL_TUBE_20,
+        "B04", "Bag frame right rail", cfg.bag_frame_side_cut, s, cfg.support_wall,
+        "y", (bag_offset + cfg.bag_frame_outer - s, bag_offset + s, cfg.bag_frame_z),
+        "bag_frame", STEEL_TUBE_20, group="bag"
     )
 
-    # Eight 100 mm L-angle ledges. The shelf is the lower leg: its upper face is
-    # Z=550, while the vertical leg continues upward to Z=567 and reaches the
-    # inner face of the top 40 mm frame (Z=560..600) for a real weld connection.
-    ledge_z = cfg.bag_frame_z - cfg.angle_wall
-    angle_positions = [
-        ("A01", "Front-left bag-frame ledge", "x", False, (90, p, ledge_z)),
-        ("A02", "Front-right bag-frame ledge", "x", False, (410, p, ledge_z)),
-        ("A03", "Rear-left bag-frame ledge", "x", True, (90, cfg.depth - p - cfg.angle_leg, ledge_z)),
-        ("A04", "Rear-right bag-frame ledge", "x", True, (410, cfg.depth - p - cfg.angle_leg, ledge_z)),
-        ("A05", "Left-front bag-frame ledge", "y", False, (p, 90, ledge_z)),
-        ("A06", "Left-rear bag-frame ledge", "y", False, (p, 410, ledge_z)),
-        ("A07", "Right-front bag-frame ledge", "y", True, (cfg.length - p - cfg.angle_leg, 90, ledge_z)),
-        ("A08", "Right-rear bag-frame ledge", "y", True, (cfg.length - p - cfg.angle_leg, 410, ledge_z)),
-    ]
-    for part_id, name, axis, mirrored, position in angle_positions:
-        angle = (
-            _angle_x(
-                cfg.upper_support_length,
-                cfg.angle_leg,
-                cfg.angle_wall,
-                mirrored,
-                shelf_at_top=False,
-            )
-            if axis == "x"
-            else _angle_y(
-                cfg.upper_support_length,
-                cfg.angle_leg,
-                cfg.angle_wall,
-                mirrored,
-                shelf_at_top=False,
-            )
-        )
-        add_shape(
-            part_id,
-            name,
-            angle,
-            position,
-            "bag_frame_support",
-            STEEL_ANGLE,
-            f"{cfg.angle_leg:g}x{cfg.angle_leg:g}x{cfg.angle_wall:g} mm angle",
-            f"{cfg.upper_support_length:g} mm",
-            RAW_STEEL,
-            length_mm=cfg.upper_support_length,
-        )
-
-    # Nominal geotextile envelope. The liner reaches the top frame sleeve and
-    # stops on the load platform, so its weight is not carried only by the rim.
     bag_size = cfg.bag_inner_opening
-    bag = _open_liner(bag_size, bag_size, cfg.bag_height, cfg.bag_wall, "G01")
     bag_xy = (cfg.length - bag_size) / 2
     add_shape(
         "G01",
-        "Geotextile planting bag",
-        bag,
-        (bag_xy, bag_xy, cfg.bag_bottom_z),
+        "Geotextile grow bag",
+        _open_liner(bag_size, bag_size, cfg.bag_height, cfg.bag_wall, "G01"),
+        (bag_xy, bag_xy, cfg.support_top_z),
         "liner",
-        "Custom geotextile fabric",
-        "open liner with upper frame sleeve",
-        f"useful envelope approx. {bag_size:g}x{bag_size:g}x{cfg.bag_height:g} mm",
+        "Geotextile fabric",
+        f"nominal {bag_size:g}x{bag_size:g} mm",
+        f"{cfg.bag_height:g} mm high",
         GEOTEXTILE,
-        note="sewing allowance and exact sleeve construction remain supplier-dependent",
+        group="bag",
+        note="nominal CAD envelope; sewing allowance and rim sleeve remain supplier-dependent",
     )
 
-    # REMOVABLE DRAIN TRAY --------------------------------------------
-    # 480 mm width gives 20 mm side clearance to the 520 mm rear opening. The
-    # top lip is Z=120; the load platform begins at Z=125, leaving 5 mm while
-    # sliding TR01 rearward below S02.
+    # DRAIN TRAY + GUIDES ----------------------------------------------
+    # The tray lives below the lower frame. It slides rearward between the legs,
+    # so no timber panel needs to be removed for normal maintenance.
     tray_x = (cfg.length - cfg.tray_width) / 2
-    tray_y = 55.0
+    tray_y = (cfg.depth - cfg.tray_depth) / 2
     t = cfg.tray_sheet
     h = cfg.tray_wall_height
     w = cfg.tray_width
     d = cfg.tray_depth
-
     tray = Compound(
         children=[
             Box(w, d, t, align=MIN_ALIGN),
@@ -441,292 +393,237 @@ def build_planter(config: PlanterConfig | None = None) -> ModelBuild:
         ]
     )
     add_shape(
-        "TR01",
-        "Removable drain tray",
-        tray,
-        (tray_x, tray_y, cfg.tray_z),
-        "drainage",
-        TRAY_STEEL,
-        "1 mm folded sheet",
-        (
-            f"nominal blank {cfg.tray_blank_width:g}x{cfg.tray_blank_depth:g} mm; "
-            f"finished {w:g}x{d:g}x{h:g} mm"
-        ),
-        GALVANISED,
-        note="bend allowance must be corrected for actual brake/tooling before cutting",
+        "TR01", "Removable drain tray", tray, (tray_x, tray_y, cfg.tray_z),
+        "drain_tray", TRAY_STEEL, "1 mm folded galvanised sheet",
+        f"finished {w:g}x{d:g}x{h:g} mm",
+        GALVANISED, group="tray",
+        blank_mm=[w + 2 * h, d + 2 * h],
+        note="correct bend allowance for the actual brake/tooling before cutting",
     )
 
-    # The guide shelves have their upper face at Z=110 and span Y=40..560.
-    # Their end faces butt directly against the front/rear 40 mm uprights.
+    # Guides end against the front/rear legs and overlap the tray by 5 mm/side.
     guide_z = cfg.tray_z - cfg.angle_leg
+    left_guide_x = p - 10.0
+    right_guide_x = cfg.length - p - 10.0
     add_shape(
-        "TG01",
-        "Left drain-tray guide",
+        "TG01", "Left drain-tray guide",
         _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, False, True),
-        (p, p, guide_z),
-        "tray_guide",
-        STEEL_ANGLE,
+        (left_guide_x, p, guide_z),
+        "tray_guide", STEEL_ANGLE,
         f"{cfg.angle_leg:g}x{cfg.angle_leg:g}x{cfg.angle_wall:g} mm angle",
-        f"{cfg.inner_opening:g} mm",
-        RAW_STEEL,
+        f"{cfg.inner_opening:g} mm", RAW_STEEL,
         length_mm=cfg.inner_opening,
     )
     add_shape(
-        "TG02",
-        "Right drain-tray guide",
+        "TG02", "Right drain-tray guide",
         _angle_y(cfg.inner_opening, cfg.angle_leg, cfg.angle_wall, True, True),
-        (cfg.length - p - cfg.angle_leg, p, guide_z),
-        "tray_guide",
-        STEEL_ANGLE,
+        (right_guide_x, p, guide_z),
+        "tray_guide", STEEL_ANGLE,
         f"{cfg.angle_leg:g}x{cfg.angle_leg:g}x{cfg.angle_wall:g} mm angle",
-        f"{cfg.inner_opening:g} mm",
-        RAW_STEEL,
+        f"{cfg.inner_opening:g} mm", RAW_STEEL,
         length_mm=cfg.inner_opening,
     )
 
-    # Symbolic envelope for the controlled drain fitting. The catalogue's
-    # nominal 20 mm is not assumed to be its drill diameter.
-    drain = Cylinder(8.0, 28.0, align=CYLINDER_ALIGN)
+    drain = Cylinder(8.0, cfg.tray_z - 20.0, align=CYLINDER_ALIGN)
     add_shape(
-        "D01",
-        "Controlled-drain bulkhead fitting",
-        drain,
-        (
-            tray_x + cfg.drain_local_x,
-            tray_y + cfg.drain_local_y,
-            cfg.tray_z - 18.0,
-        ),
-        "drainage",
-        "20 mm / 1/2 in bulkhead fitting",
-        "nominal fitting envelope",
-        "verify purchased fitting before drilling",
-        DRAIN,
-        nominal_mm=cfg.drain_nominal_diameter,
+        "D01", "Controlled-drain bulkhead fitting", drain,
+        (tray_x + cfg.drain_local_x, tray_y + cfg.drain_local_y, 20.0),
+        "drainage", "20 mm / 1/2 in bulkhead fitting",
+        "nominal fitting envelope", "1 pc", DRAIN, group="tray",
+        note="verify the real fitting drill diameter before punching the tray",
     )
 
-    # TIMBER CLADDING --------------------------------------------------
-    # The slats are flush with the 600 mm envelope and sit only in the 520 mm
-    # openings. Seven 60 mm slats + six 12.5 mm gaps = 495 mm, leaving 12.5 mm
-    # between the outer slats and each 40 mm corner post.
-    slat_positions = [
-        cfg.frame_size + cfg.slat_side_margin + i * (cfg.slat_width + cfg.slat_gap)
-        for i in range(cfg.slat_count_per_face)
+    # TIMBER SIDE PANELS ------------------------------------------------
+    # Each face is a removable wood panel: seven vertical slats fixed from the
+    # rear to two concealed horizontal 60x20 battens. The whole panel needs only
+    # four concealed frame fixings (two per batten). Exact small bracket/rivnut
+    # hardware remains selectable without changing the panel geometry.
+    panel_defs = [
+        ("F", "Front", "front"),
+        ("R", "Rear", "rear"),
+        ("L", "Left", "left"),
+        ("Q", "Right", "right"),
     ]
+    opening_start = p + cfg.slat_side_margin
+    pitch = cfg.slat_width + cfg.slat_gap
 
-    slat_number = 1
-    for face in ("front", "rear", "left", "right"):
-        for position in slat_positions:
-            part_id = f"W{slat_number:02d}"
+    for prefix, face_name, face in panel_defs:
+        for i in range(cfg.slat_count_per_face):
+            offset = opening_start + i * pitch
             if face == "front":
                 dims = (cfg.slat_width, cfg.slat_thickness, cfg.slat_height)
-                pos = (position, 0, cfg.slat_z)
+                pos = (offset, 0, cfg.slat_z)
             elif face == "rear":
                 dims = (cfg.slat_width, cfg.slat_thickness, cfg.slat_height)
-                pos = (position, cfg.depth - cfg.slat_thickness, cfg.slat_z)
+                pos = (offset, cfg.depth - cfg.slat_thickness, cfg.slat_z)
             elif face == "left":
                 dims = (cfg.slat_thickness, cfg.slat_width, cfg.slat_height)
-                pos = (0, position, cfg.slat_z)
+                pos = (0, offset, cfg.slat_z)
             else:
                 dims = (cfg.slat_thickness, cfg.slat_width, cfg.slat_height)
-                pos = (cfg.length - cfg.slat_thickness, position, cfg.slat_z)
+                pos = (cfg.length - cfg.slat_thickness, offset, cfg.slat_z)
 
             add_box(
-                part_id,
-                f"{face.capitalize()} timber slat {slat_number}",
-                dims,
-                pos,
-                "cladding_service_panel" if face == "rear" else "cladding_fixed",
-                TIMBER,
-                f"{cfg.slat_width:g}x{cfg.slat_thickness:g} mm timber slat",
+                f"{prefix}W{i + 1:02d}",
+                f"{face_name} timber slat {i + 1}",
+                dims, pos, "cladding", TIMBER,
+                f"{cfg.slat_width:g}x{cfg.slat_thickness:g} mm timber",
                 f"{cfg.slat_height:g} mm",
                 WOOD,
-                length_mm=cfg.slat_height,
-                face=face,
-                removable=(face == "rear"),
+                panel=face_name,
             )
-            slat_number += 1
 
-    # Fixed faces use welded 20x4 backing straps. Rear straps belong to the
-    # removable service panel and are screwed to the timber instead of welded.
-    strap_zs = (cfg.cladding_strap_z_low, cfg.cladding_strap_z_high)
-    strap_id = 1
-    for face in ("front", "rear", "left", "right"):
-        for z in strap_zs:
-            part_id = f"P{strap_id:02d}"
+        for j, z in enumerate((cfg.batten_z_low, cfg.batten_z_high), start=1):
             if face == "front":
-                dims = (cfg.inner_opening, cfg.flat_thickness, cfg.flat_width)
+                dims = (cfg.inner_opening, cfg.batten_thickness, cfg.batten_height)
                 pos = (p, cfg.slat_thickness, z)
             elif face == "rear":
-                dims = (cfg.inner_opening, cfg.flat_thickness, cfg.flat_width)
-                pos = (p, cfg.depth - cfg.slat_thickness - cfg.flat_thickness, z)
+                dims = (cfg.inner_opening, cfg.batten_thickness, cfg.batten_height)
+                pos = (p, cfg.depth - cfg.slat_thickness - cfg.batten_thickness, z)
             elif face == "left":
-                dims = (cfg.flat_thickness, cfg.inner_opening, cfg.flat_width)
+                dims = (cfg.batten_thickness, cfg.inner_opening, cfg.batten_height)
                 pos = (cfg.slat_thickness, p, z)
             else:
-                dims = (cfg.flat_thickness, cfg.inner_opening, cfg.flat_width)
-                pos = (cfg.length - cfg.slat_thickness - cfg.flat_thickness, p, z)
+                dims = (cfg.batten_thickness, cfg.inner_opening, cfg.batten_height)
+                pos = (cfg.length - cfg.slat_thickness - cfg.batten_thickness, p, z)
 
             add_box(
-                part_id,
-                f"{face.capitalize()} cladding backing strap",
-                dims,
-                pos,
-                "service_panel_backing" if face == "rear" else "cladding_backing",
-                STEEL_FLAT,
-                f"{cfg.flat_width:g}x{cfg.flat_thickness:g} mm flat bar",
+                f"{prefix}B{j:02d}",
+                f"{face_name} concealed timber batten {j}",
+                dims, pos, "cladding_batten", TIMBER,
+                f"{cfg.batten_height:g}x{cfg.batten_thickness:g} mm timber",
                 f"{cfg.inner_opening:g} mm",
-                RAW_STEEL,
-                length_mm=cfg.inner_opening,
-                face=face,
-                welded_to_frame=(face != "rear"),
+                WOOD,
+                panel=face_name,
+                note="slats fixed from rear; D4 exterior adhesive + stainless brads/screws recommended",
             )
-            strap_id += 1
 
-    # Four tabs are welded to the rear uprights. Their faces touch the rear
-    # service-panel backing straps, allowing four hidden M5 fasteners.
-    tab_specs = [
-        ("MT01", p, cfg.cladding_strap_z_low),
-        ("MT02", cfg.length - p - cfg.service_mount_tab_length, cfg.cladding_strap_z_low),
-        ("MT03", p, cfg.cladding_strap_z_high),
-        ("MT04", cfg.length - p - cfg.service_mount_tab_length, cfg.cladding_strap_z_high),
-    ]
-    for part_id, x, z in tab_specs:
-        add_box(
-            part_id,
-            "Rear service-panel mounting tab",
-            (cfg.service_mount_tab_length, cfg.flat_thickness, cfg.flat_width),
-            (x, cfg.depth - cfg.slat_thickness - 2 * cfg.flat_thickness, z),
-            "service_panel_mount",
-            STEEL_FLAT,
-            f"{cfg.flat_width:g}x{cfg.flat_thickness:g} mm flat bar",
-            f"{cfg.service_mount_tab_length:g} mm",
-            RAW_STEEL,
-            length_mm=cfg.service_mount_tab_length,
-            drilling="M5 clearance hole after dry fit",
-        )
+    assembly = Compound(label="square-planter-600-v2", children=all_shapes)
 
-    joints: list[dict[str, Any]] = []
-    rail_to_uprights = {
-        "R01": ("U01", "U02"),
-        "R02": ("U03", "U04"),
-        "R03": ("U01", "U03"),
-        "R04": ("U02", "U04"),
-        "R05": ("U01", "U02"),
-        "R06": ("U03", "U04"),
-        "R07": ("U01", "U03"),
-        "R08": ("U02", "U04"),
-    }
-    joint_index = 1
-    for rail_id, upright_ids in rail_to_uprights.items():
-        for upright_id in upright_ids:
-            joints.append(
-                {
-                    "id": f"J{joint_index:03d}",
-                    "type": "welded butt joint",
-                    "parts": [rail_id, upright_id],
-                    "fit": "0 mm nominal gap; square-cut rail end to upright face",
-                    "weld": "continuous fillet around accessible perimeter; final size by fabricator",
-                }
-            )
-            joint_index += 1
-
-    joints.extend(
-        [
-            {
-                "id": "JB01",
-                "type": "welded support-grid assembly",
-                "parts": ["S01", "S02", "S03", "S04", "S05", "U01", "U02", "U03", "U04"],
-                "fit": "S01/S02 20x20 ends fully contact upright faces; S03-S05 butt between S01/S02",
-                "weld": "fillet weld at every tube end; no tube overlap",
-            },
-            {
-                "id": "JB02",
-                "type": "removable gravity-supported bag frame",
-                "parts": ["B01", "B02", "B03", "B04", "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08"],
-                "fit": "500 mm frame inside 520 mm opening = 10 mm clearance per side; ledge shelf top Z=550",
-                "weld": "A01-A08 welded to top frame; B01-B04 welded only to each other",
-            },
-            {
-                "id": "JD01",
-                "type": "sliding removable tray",
-                "parts": ["TR01", "TG01", "TG02"],
-                "fit": "10 mm tray overlap per guide; 5 mm vertical extraction clearance below bag-support grid",
-                "weld": "TG01/TG02 butt-welded at ends to front/rear uprights; tray remains removable",
-            },
-            {
-                "id": "JC01",
-                "type": "fixed cladding screws",
-                "parts": ["W01-W07", "W15-W28", "P01", "P02", "P05", "P06", "P07", "P08"],
-                "fastener": "2 concealed timber-to-steel screws per slat, one at each backing strap",
-            },
-            {
-                "id": "JC02",
-                "type": "removable rear service panel",
-                "parts": ["W08-W14", "P03", "P04", "MT01", "MT02", "MT03", "MT04"],
-                "fastener": "rear slats screwed to P03/P04; complete panel fixed to MT01-MT04 with 4 removable M5 fasteners",
-            },
-            {
-                "id": "JD02",
-                "type": "controlled drainage",
-                "parts": ["TR01", "D01"],
-                "fit": "bulkhead near rear-right tray corner for hose/tap access behind service panel",
-                "critical": "measure the purchased bulkhead; do not drill from nominal 20 mm catalogue size",
-            },
-        ]
+    body_compound = Compound(label="planter-body", children=exploded_groups["body"])
+    bag_compound = Compound(label="bag-and-frame", children=exploded_groups["bag"])
+    tray_compound = Compound(label="tray-and-drain", children=exploded_groups["tray"])
+    exploded = Compound(
+        label="square-planter-600-logical-exploded",
+        children=[
+            body_compound,
+            Pos(-720, 0, 220) * bag_compound,
+            Pos(720, 0, 0) * tray_compound,
+        ],
     )
-
-    assembly = Compound(label="square-planter-600-fabrication-v1", children=shapes)
 
     metadata = {
         "schema_version": 2,
-        "model": "square-planter-600-fabrication-v1",
-        "status": "fabrication design v1",
+        "model": "square-planter-600-v2",
+        "status": "fabrication design / v2",
         "units": "mm",
         "parameters": asdict(cfg),
         "derived": {
             "inner_opening_mm": cfg.inner_opening,
-            "bag_frame_clearance_each_side_mm": (cfg.inner_opening - cfg.bag_frame_outer) / 2,
-            "bag_useful_width_mm": bag_size,
+            "leg_clearance_mm": cfg.leg_clearance,
+            "bottom_frame_z_mm": cfg.bottom_frame_z,
+            "bag_useful_width_mm": cfg.bag_inner_opening,
             "bag_useful_height_mm": cfg.bag_height,
-            "tray_side_clearance_each_side_mm": (cfg.inner_opening - cfg.tray_width) / 2,
-            "tray_to_support_vertical_clearance_mm": cfg.bag_support_z - (cfg.tray_z + cfg.tray_wall_height),
-            "slat_margin_to_posts_mm": cfg.slat_side_margin,
-            "support_longitudinal_cut_mm": longitudinal_length,
+            "bag_volume_litres": round(cfg.bag_volume_litres, 1),
+            "bag_frame_clearance_each_side_mm": (cfg.inner_opening - cfg.bag_frame_outer) / 2,
+            "tray_side_clearance_each_side_mm": cfg.tray_side_clearance,
+            "tray_to_bottom_frame_vertical_clearance_mm": cfg.tray_to_bottom_frame_clearance,
+            "slat_side_margin_mm": cfg.slat_side_margin,
+            "panel_frame_fixings_each": 4,
+            "panel_count": 4,
         },
         "parts": parts,
-        "joints": joints,
-        "service": {
-            "service_face": "rear",
-            "tray_removal_direction": "+Y / rearward",
-            "procedure": [
-                "Remove the four concealed M5 service-panel fasteners.",
-                "Lift/remove the complete rear timber panel.",
-                "Disconnect or cap the drain hose/fitting as required.",
-                "Slide TR01 rearward along TG01/TG02 beneath the bag-support grid.",
-            ],
-        },
-        "fabrication_notes": [
-            "Main 40x40 rails are square-cut to 520 mm and butt between full-height 600 mm corner posts.",
-            "S01/S02 are positioned for full 20x20 end-face contact with the corner uprights; S03-S05 butt between them.",
-            "The removable bag frame is 500 mm outside dimension and bears on eight upward-facing L-angle ledges.",
-            "The tray is removable and drained; its 10 mm wall is intentionally low to preserve extraction clearance.",
-            "Galvanised tray bend allowance and drain drilling diameter must be finalised from the actual sheet-metal tooling and purchased fitting.",
-            "Raw-steel parts require corrosion preparation, primer and topcoat after welding and before timber/geotextile installation.",
+        "assemblies": [
+            {
+                "id": "AS01",
+                "name": "Welded planter body",
+                "contains": "main frame, bag load platform, bag ledges, tray guides, feet",
+            },
+            {
+                "id": "AS02",
+                "name": "Four timber side panels",
+                "contains": "7 vertical slats + 2 horizontal battens per face",
+            },
+            {
+                "id": "AS03",
+                "name": "Removable geotextile bag and rim frame",
+                "contains": ["B01", "B02", "B03", "B04", "G01"],
+            },
+            {
+                "id": "AS04",
+                "name": "Removable drain tray",
+                "contains": ["TR01", "D01"],
+            },
         ],
-        "purchase_references": [
-            {"item": "40x40x1.5 raw steel tube, 3 m", "supplier": "Obramat"},
-            {"item": "20x20x1.5 decapated steel tube, 3 m", "supplier": "Obramat"},
-            {"item": "20x20x3 raw steel angle, 1 m", "supplier": "Obramat"},
-            {"item": "20x4 raw steel flat bar, 1 m", "supplier": "Obramat"},
-            {"item": "60x20x2500 planed laminated fir slat", "supplier": "Obramat"},
-            {"item": "1 mm galvanised steel sheet", "supplier": "Obramat"},
-            {"item": "20 mm / 1/2 in bulkhead fitting", "supplier": "Leroy Merlin"},
+        "joints": [
+            {
+                "id": "J01",
+                "type": "weld",
+                "name": "Main 40x40 frame",
+                "spec": "square-cut butt joints; continuous posts; rails welded between posts",
+            },
+            {
+                "id": "J02",
+                "type": "weld",
+                "name": "Bag support grid",
+                "spec": "20x20 support rails welded together and to the lower frame",
+            },
+            {
+                "id": "J03",
+                "type": "weld",
+                "name": "Bag-frame ledges",
+                "spec": "4 x 100 mm 20x20x3 angle pieces welded to inner faces of top rails",
+            },
+            {
+                "id": "J04",
+                "type": "weld",
+                "name": "Tray guides",
+                "spec": "20x20x3 angle guides welded between front/rear legs",
+            },
+            {
+                "id": "J05",
+                "type": "wood-panel",
+                "name": "Slats to timber battens",
+                "spec": "fix from rear; D4 exterior adhesive plus stainless brads or short stainless screws",
+            },
+            {
+                "id": "J06",
+                "type": "mechanical",
+                "name": "Timber panel to steel frame",
+                "spec": "4 concealed fixings per face; exact small bracket/rivnut hardware to select before drilling",
+            },
+        ],
+        "service": {
+            "tray_removal": "slides rearward below the lower 40x40 frame",
+            "panel_removal_required_for_tray": False,
+            "bag_removal": "lift complete geotextile bag by its removable 20x20 rim frame",
+        },
+        "purchases": [
+            {"item": "40x40x1.5 raw steel tube", "stock": "3 m", "suggested_qty": 3},
+            {"item": "20x20x1.5 steel tube", "stock": "3 m", "suggested_qty": 2},
+            {"item": "20x20x3 steel angle", "stock": "1 m", "suggested_qty": 2},
+            {"item": "60x20 planed fir", "stock": "2.5 m", "suggested_qty": 8},
+            {"item": "1 mm galvanised sheet", "stock": "sheet", "suggested_qty": 1},
+            {"item": "40x40 polyethylene insert caps", "stock": "pack of 4", "suggested_qty": 1},
+        ],
+        "fabrication_notes": [
+            "Main lower frame is raised 80 mm; the four continuous uprights form the legs.",
+            "Tray sits below the lower frame and is removable without touching the timber panels.",
+            "The removable bag rim frame is hidden inside the 40 mm top border.",
+            "The load platform carries the soil weight; the geotextile rim is not the sole structural support.",
+            "Each timber face is built as one panel: 7 slats on 2 concealed horizontal timber battens.",
+            "Only four concealed steel-frame fixings are required per timber panel.",
+            "Foot caps are represented symbolically; verify the purchased insert depth before final cutting/painting.",
         ],
         "notes": [
-            "The trellis is intentionally excluded from this model.",
-            "All rear decorative slats form one removable service panel, keeping the tray hidden in normal use.",
-            "Weld beads and final drilled fastener holes are specified semantically rather than represented as final solids in v1.",
+            "Exact weld size, paint system, drain-hole diameter and panel mounting hardware should be frozen before fabrication drawings are issued.",
+            "The exploded GLB separates the assembled planter body, bag+frame and tray+drain rather than exploding every individual part.",
         ],
     }
 
-    return ModelBuild(shape=assembly, bom=_group_bom(parts), metadata=metadata)
+    return ModelBuild(
+        shape=assembly,
+        exploded_shape=exploded,
+        bom=_group_bom(parts),
+        metadata=metadata,
+    )

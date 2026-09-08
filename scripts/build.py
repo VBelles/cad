@@ -35,10 +35,24 @@ def main() -> None:
     result = build_planter()
 
     step_path = DOWNLOAD_DIR / "planter.step"
-    glb_path = MODEL_DIR / "planter.glb"
+    assembled_glb_path = MODEL_DIR / "planter.glb"
+    exploded_glb_path = MODEL_DIR / "planter-exploded.glb"
 
     export_step(result.shape, step_path)
-    export_gltf(result.shape, glb_path, binary=True, linear_deflection=0.2, angular_deflection=0.1)
+    export_gltf(
+        result.shape,
+        assembled_glb_path,
+        binary=True,
+        linear_deflection=0.2,
+        angular_deflection=0.1,
+    )
+    export_gltf(
+        result.exploded_shape,
+        exploded_glb_path,
+        binary=True,
+        linear_deflection=0.2,
+        angular_deflection=0.1,
+    )
 
     write_json(DATA_DIR / "bom.json", result.bom)
     write_json(DATA_DIR / "metadata.json", result.metadata)
@@ -46,7 +60,8 @@ def main() -> None:
     shutil.copytree(WEB_DIR, DIST, dirs_exist_ok=True)
 
     print(f"Built {step_path.relative_to(ROOT)}")
-    print(f"Built {glb_path.relative_to(ROOT)}")
+    print(f"Built {assembled_glb_path.relative_to(ROOT)}")
+    print(f"Built {exploded_glb_path.relative_to(ROOT)}")
     print(f"Built {DATA_DIR.relative_to(ROOT)}/{{bom,metadata}}.json")
     print(f"Web site ready at {DIST.relative_to(ROOT)}/")
 

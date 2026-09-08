@@ -5,62 +5,69 @@ from dataclasses import dataclass
 class PlanterConfig:
     """Fabrication dimensions in millimetres unless stated otherwise."""
 
-    # Finished steel frame envelope. Timber slats sit flush inside this envelope.
+    # Finished envelope, including the four continuous 40x40 steel uprights/legs.
     length: float = 600.0
     depth: float = 600.0
     body_height: float = 600.0
 
-    # Main welded frame: Obramat 40x40x1.5 mm raw steel tube.
+    # Main welded frame: Obramat raw steel tube 40x40x1.5 mm.
     frame_size: float = 40.0
     frame_wall: float = 1.5
+    leg_clearance: float = 80.0
 
-    # Internal load-bearing frame: Obramat 20x20x1.5 mm steel tube.
+    # Internal load platform: Obramat steel tube 20x20x1.5 mm.
     support_size: float = 20.0
     support_wall: float = 1.5
-    bag_support_z: float = 125.0
+    bag_support_z: float = 120.0
 
-    # Removable upper frame sewn into / captured by the geotextile bag edge.
+    # Removable bag frame, supported just inside the 40 mm top border.
     bag_frame_outer: float = 500.0
-    bag_frame_z: float = 550.0
+    bag_frame_z: float = 563.0
     bag_wall: float = 2.0
 
-    # L-angle supports: Obramat 20x20x3 mm steel angle.
+    # Obramat steel angle 20x20x3 mm.
     angle_leg: float = 20.0
     angle_wall: float = 3.0
-    upper_support_length: float = 100.0
+    bag_ledge_length: float = 100.0
 
-    # Drain tray. 1 mm galvanised sheet, removable towards the rear service face.
-    tray_width: float = 480.0
-    tray_depth: float = 490.0
-    tray_z: float = 110.0
+    # Removable drain tray under the lower frame, between the legs.
+    tray_width: float = 510.0
+    tray_depth: float = 500.0
+    tray_z: float = 48.0
     tray_wall_height: float = 10.0
     tray_sheet: float = 1.0
-    tray_guide_length: float = 490.0
     drain_nominal_diameter: float = 20.0
     drain_local_x: float = 400.0
     drain_local_y: float = 450.0
 
-    # Decorative timber cladding. Obramat 2500x60x20 mm abeto slat stock.
+    # Decorative timber panels. Vertical slats use Obramat 60x20 mm stock.
     slat_width: float = 60.0
     slat_thickness: float = 20.0
-    slat_height: float = 495.0
+    slat_height: float = 430.0
     slat_gap: float = 12.5
     slat_count_per_face: int = 7
+    slat_z: float = 125.0
 
-    # 20x4 mm steel flat-bar backing straps behind the timber slats.
-    flat_width: float = 20.0
-    flat_thickness: float = 4.0
-    cladding_strap_z_low: float = 190.0
-    cladding_strap_z_high: float = 410.0
-    service_mount_tab_length: float = 50.0
+    # Two concealed horizontal timber battens per panel; same 60x20 stock.
+    batten_height: float = 60.0
+    batten_thickness: float = 20.0
+    batten_z_low: float = 185.0
+    batten_z_high: float = 435.0
+
+    # Symbolic floor-protection inserts/caps for the 40x40 legs.
+    foot_cap_visible: float = 2.0
 
     @property
     def inner_opening(self) -> float:
         return self.length - 2 * self.frame_size
 
     @property
-    def upright_length(self) -> float:
-        return self.body_height
+    def bottom_frame_z(self) -> float:
+        return self.leg_clearance
+
+    @property
+    def top_frame_z(self) -> float:
+        return self.body_height - self.frame_size
 
     @property
     def frame_rail_length(self) -> float:
@@ -71,16 +78,12 @@ class PlanterConfig:
         return self.bag_support_z + self.support_size
 
     @property
-    def bag_bottom_z(self) -> float:
-        return self.support_top_z
+    def bag_inner_opening(self) -> float:
+        return self.bag_frame_outer - 2 * self.support_size
 
     @property
     def bag_height(self) -> float:
-        return self.bag_frame_z - self.bag_bottom_z
-
-    @property
-    def bag_inner_opening(self) -> float:
-        return self.bag_frame_outer - 2 * self.support_size
+        return self.bag_frame_z - self.support_top_z
 
     @property
     def bag_frame_side_cut(self) -> float:
@@ -95,13 +98,18 @@ class PlanterConfig:
         return (self.inner_opening - occupied) / 2
 
     @property
-    def slat_z(self) -> float:
-        return self.frame_size + (self.inner_opening - self.slat_height) / 2
+    def tray_side_clearance(self) -> float:
+        return (self.inner_opening - self.tray_width) / 2
 
     @property
-    def tray_blank_width(self) -> float:
-        return self.tray_width + 2 * self.tray_wall_height
+    def tray_to_bottom_frame_clearance(self) -> float:
+        return self.bottom_frame_z - (self.tray_z + self.tray_wall_height)
 
     @property
-    def tray_blank_depth(self) -> float:
-        return self.tray_depth + 2 * self.tray_wall_height
+    def bag_volume_litres(self) -> float:
+        return (
+            self.bag_inner_opening
+            * self.bag_inner_opening
+            * self.bag_height
+            / 1_000_000
+        )
