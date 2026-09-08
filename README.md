@@ -37,6 +37,16 @@ A build creates:
 
 `dist/` is generated and must not be edited manually.
 
+## GitHub Pages: one-time setup
+
+The CAD build itself runs automatically on pushes to `main`. For the first web deployment, GitHub Pages must be enabled once in the repository UI:
+
+1. Open **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. Re-run the `Build CAD and deploy Pages` workflow (or push another commit).
+
+After that, every push to `main` rebuilds the CAD artifacts and deploys the viewer automatically.
+
 ## First model
 
 `models/planter.py` is intentionally a simple parametric planter/trellis reference model. It is not yet a final fabrication design; its purpose is to establish the CAD → artifacts → web pipeline before the real planter geometry and joints are iterated.
