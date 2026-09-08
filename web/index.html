@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>CAD · Planter</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.3.1/model-viewer.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <span class="eyebrow">VBelles / CAD</span>
+      <h1>Planter concept</h1>
+    </div>
+    <nav class="actions" aria-label="Model downloads">
+      <a class="button secondary" href="./downloads/planter.step">STEP</a>
+      <a class="button secondary" href="./models/planter.glb">GLB</a>
+      <a class="button" href="https://github.com/VBelles/cad">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="viewer-card" aria-label="Interactive 3D model">
+      <model-viewer
+        id="viewer"
+        src="./models/planter.glb"
+        alt="Parametric planter and trellis CAD model"
+        camera-controls
+        touch-action="pan-y"
+        shadow-intensity="0.7"
+        exposure="1"
+        environment-image="neutral"
+        interaction-prompt="auto">
+        <div class="progress" slot="progress-bar">Loading 3D model…</div>
+      </model-viewer>
+      <div class="viewer-help">Drag to orbit · scroll/pinch to zoom</div>
+    </section>
+
+    <aside class="info-panel">
+      <section>
+        <div class="section-heading">
+          <h2>Model</h2>
+          <span id="status" class="badge">Loading…</span>
+        </div>
+        <dl id="summary" class="summary"></dl>
+      </section>
+
+      <section>
+        <h2>Bill of materials</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Profile</th>
+                <th>Length</th>
+                <th>Qty</th>
+              </tr>
+            </thead>
+            <tbody id="bom"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Design notes</h2>
+        <ul id="notes" class="notes"></ul>
+      </section>
+    </aside>
+  </main>
+
+  <footer>
+    Generated from Python/build123d. The repository is the source of truth.
+  </footer>
+</body>
+</html>
