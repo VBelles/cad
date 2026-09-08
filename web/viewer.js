@@ -3,9 +3,34 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const MM_TO_MODEL = 0.001;
+const PAINTED_STEEL_PRODUCT_IDS = new Set([
+  'obramat-tube-40',
+  'obramat-tube-20',
+  'obramat-angle-20',
+  'obramat-flat-30x3',
+]);
+const OFF_WHITE_STEEL = new THREE.Color(0xf0f0ed);
 
 function vectorFromMm(values) {
   return new THREE.Vector3(...values.map((value) => value * MM_TO_MODEL));
+}
+
+function applyOffWhiteSteelFinish(partNode) {
+  partNode.traverse((node) => {
+    if (!node.isMesh || !node.material) return;
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    const paintedMaterials = materials.map((material) => {
+      const painted = material.clone();
+      if (painted.color) painted.color.copy(OFF_WHITE_STEEL);
+      if ('metalness' in painted) painted.metalness = 0.12;
+      if ('roughness' in painted) painted.roughness = 0.48;
+      painted.needsUpdate = true;
+      return painted;
+    });
+
+    node.material = Array.isArray(node.material) ? paintedMaterials : paintedMaterials[0];
+  });
 }
 
 export async function createCadViewer(container, metadata, options = {}) {
@@ -65,6 +90,15 @@ export async function createCadViewer(container, metadata, options = {}) {
   model.traverse((node) => {
     if (node.name) nodeByName.set(node.name, node);
   });
+
+  // The BOM still describes the purchased bare steel accurately; this is only
+  // the intended final visual finish. Clone mesh materials per part so the
+  // galvanised tray and stainless fasteners keep their own appearances.
+  for (const part of partsById.values()) {
+    if (!PAINTED_STEEL_PRODUCT_IDS.has(part.product_id)) continue;
+    const partNode = nodeByName.get(part.id);
+    if (partNode) applyOffWhiteSteelFinish(partNode);
+  }
 
   const movableNodes = new Set();
   for (const group of groupsById.values()) {
