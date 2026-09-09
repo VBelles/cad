@@ -53,6 +53,12 @@ def main() -> None:
     for model_id, (label, config, builder) in MODEL_SPECS.items():
         result = builder(config, model_id=model_id)
 
+        # Bind every metadata file to its own generated GLB. The viewer otherwise
+        # falls back to ./models/planter.glb, which is intentionally just the
+        # default welded 600x600 model and would make parallel variants display
+        # the wrong geometry and break part selection/group explosion.
+        result.metadata.setdefault("viewer", {})["model_src"] = f"./models/{model_id}.glb"
+
         solid_count = len(result.shape.solids())
         if solid_count < 30:
             raise RuntimeError(
