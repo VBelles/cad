@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
-from build123d import Align, Box, Color, Compound, Pos
+from build123d import Align, Box, Color, Compound, Pos, Rot
 
 from .planter import ModelBuild, _group_bom, _hollow_tube
 
@@ -16,7 +17,7 @@ RIVET = Color(0.52, 0.54, 0.56)
 
 P_TUBE_40 = "obramat-tube-40"
 P_ANGLE_40 = "angle-40x40x3-tbd"
-P_CORNER_WRAP = "alberts-corner-50x50x70"
+P_INTERNAL_BRACKET = "amazon-trapezoid-internal-bracket"
 P_RIVET_64 = "structural-rivet-6-4"
 P_CAP_40 = "plastic-cap-40"
 
@@ -31,11 +32,13 @@ class BoltedStructureConfig:
     leg_clearance: float = 40.0
     angle_leg: float = 40.0
     angle_thickness: float = 3.0
-    bracket_leg: float = 50.0
-    bracket_height: float = 70.0
+    bracket_diagonal: float = 63.0
+    bracket_width: float = 22.0
+    bracket_tab: float = 14.0
     bracket_thickness: float = 1.5
+    bracket_inside_offset: float = 8.0
     rivet_diameter: float = 6.4
-    rivets_per_corner: int = 6
+    rivets_per_bracket: int = 4
     bottom_cap_visible: float = 2.0
 
 
@@ -72,13 +75,7 @@ def _top_cover_angle_x(
     *,
     rear: bool,
 ):
-    """Upper front/rear angle with integral post-cover tabs.
-
-    The horizontal 40 mm leg remains continuous across the full planter width.
-    At both 40 mm ends the vertical leg is cut away, leaving two 40x40x3 tabs
-    that sit directly on the shortened post mouths. The middle 520 mm remains a
-    normal L40x40x3 structural rail.
-    """
+    """Upper front/rear angle with integral 40x40 post-cover tabs."""
     vertical_y = leg - t if rear else 0.0
     return Compound(
         children=[
@@ -89,24 +86,71 @@ def _top_cover_angle_x(
     )
 
 
-def _corner_wrap(leg: float, height: float, t: float, *, right: bool, rear: bool):
-    """Actual two-plane Alberts 337254 corner-wrap geometry.
+def _internal_bracket_x(
+    diagonal: float,
+    width: float,
+    tab: float,
+    t: float,
+    *,
+    right_end: bool,
+    upper: bool,
+):
+    """Symbolic reinforced internal bracket for a rail running in X.
 
-    The commercial part is a 90 degree folded strip: two 50 mm legs, 70 mm
-    height/width along the bend and 1.5 mm material. It wraps the *outside* of
-    the frame corner, bridging both perpendicular faces. It is not a three-plane
-    shelf bracket. Local origin is the theoretical outside corner of the frame.
+    A thin diagonal web sits in the X/Z joint plane and terminates in one small
+    vertical tab against the post and one horizontal tab on the angle shelf.
+    The common furniture-style trapezoidal bracket is used only as the geometry
+    concept; exact stamping dimensions remain to be measured before fabrication.
     """
-    x_start = -leg if right else 0.0
-    y_start = -leg if rear else 0.0
-    front_rear_y = 0.0 if rear else -t
-    left_right_x = 0.0 if right else -t
-    return Compound(
-        children=[
-            Pos(x_start, front_rear_y, 0) * Box(leg, t, height, align=MIN_ALIGN),
-            Pos(left_right_x, y_start, 0) * Box(t, leg, height, align=MIN_ALIGN),
-        ]
-    )
+    projected = diagonal / math.sqrt(2.0)
+    if not right_end and not upper:
+        web = Pos(0, 0, projected) * Rot(0, 45, 0) * Box(diagonal, width, t, align=MIN_ALIGN)
+        post_tab = Box(t, width, tab, align=MIN_ALIGN)
+        post_tab = Pos(0, 0, projected - tab) * post_tab
+        rail_tab = Pos(projected - tab, 0, 0) * Box(tab, width, t, align=MIN_ALIGN)
+    elif right_end and not upper:
+        web = Pos(projected, 0, projected) * Rot(0, 135, 0) * Box(diagonal, width, t, align=MIN_ALIGN)
+        post_tab = Pos(projected - t, 0, projected - tab) * Box(t, width, tab, align=MIN_ALIGN)
+        rail_tab = Box(tab, width, t, align=MIN_ALIGN)
+    elif not right_end and upper:
+        web = Rot(0, -45, 0) * Box(diagonal, width, t, align=MIN_ALIGN)
+        post_tab = Box(t, width, tab, align=MIN_ALIGN)
+        rail_tab = Pos(projected - tab, 0, projected - t) * Box(tab, width, t, align=MIN_ALIGN)
+    else:
+        web = Pos(projected, 0, 0) * Rot(0, -135, 0) * Box(diagonal, width, t, align=MIN_ALIGN)
+        post_tab = Pos(projected - t, 0, 0) * Box(t, width, tab, align=MIN_ALIGN)
+        rail_tab = Pos(0, 0, projected - t) * Box(tab, width, t, align=MIN_ALIGN)
+    return Compound(children=[web, post_tab, rail_tab])
+
+
+def _internal_bracket_y(
+    diagonal: float,
+    width: float,
+    tab: float,
+    t: float,
+    *,
+    rear_end: bool,
+    upper: bool,
+):
+    """Same reinforced internal bracket, rotated for a rail running in Y."""
+    projected = diagonal / math.sqrt(2.0)
+    if not rear_end and not upper:
+        web = Pos(0, 0, projected) * Rot(-45, 0, 0) * Box(width, diagonal, t, align=MIN_ALIGN)
+        post_tab = Pos(0, 0, projected - tab) * Box(width, t, tab, align=MIN_ALIGN)
+        rail_tab = Pos(0, projected - tab, 0) * Box(width, tab, t, align=MIN_ALIGN)
+    elif rear_end and not upper:
+        web = Pos(0, projected, projected) * Rot(-135, 0, 0) * Box(width, diagonal, t, align=MIN_ALIGN)
+        post_tab = Pos(0, projected - t, projected - tab) * Box(width, t, tab, align=MIN_ALIGN)
+        rail_tab = Box(width, tab, t, align=MIN_ALIGN)
+    elif not rear_end and upper:
+        web = Rot(45, 0, 0) * Box(width, diagonal, t, align=MIN_ALIGN)
+        post_tab = Box(width, t, tab, align=MIN_ALIGN)
+        rail_tab = Pos(0, projected - tab, projected - t) * Box(width, tab, t, align=MIN_ALIGN)
+    else:
+        web = Pos(0, projected, 0) * Rot(135, 0, 0) * Box(width, diagonal, t, align=MIN_ALIGN)
+        post_tab = Pos(0, projected - t, 0) * Box(width, t, tab, align=MIN_ALIGN)
+        rail_tab = Pos(0, 0, projected - t) * Box(width, tab, t, align=MIN_ALIGN)
+    return Compound(children=[web, post_tab, rail_tab])
 
 
 def build_planter(
@@ -123,6 +167,7 @@ def build_planter(
     upper_z = cfg.body_height - cfg.angle_leg
     lower_z = cfg.leg_clearance
     post_length = cfg.body_height - cfg.angle_thickness
+    bracket_projection = cfg.bracket_diagonal / math.sqrt(2.0)
 
     shapes: list[Any] = []
     parts: list[dict[str, Any]] = []
@@ -176,8 +221,7 @@ def build_planter(
         item.update(extra)
         parts.append(item)
 
-    # The steel tabs are 3 mm thick and define the final Z=600 top plane, so the
-    # four continuous posts finish at Z=597 instead of needing separate top caps.
+    # 597 mm posts + 3 mm integral steel tabs keep the final envelope at 600 mm.
     for x_name, x in (("left", 0.0), ("right", cfg.length - p)):
         for y_name, y in (("front", 0.0), ("rear", cfg.depth - p)):
             post_id = next_id("P")
@@ -196,9 +240,6 @@ def build_planter(
                 length_mm=post_length,
                 note="top mouth is closed by the integral 40x40x3 tab of the upper front/rear angle",
             )
-
-            # Bottom remains a simple insert cap; the four visible upper plastic
-            # caps from the first no-weld study have been eliminated.
             cap_id = next_id("CAP")
             add_shape(
                 cap_id,
@@ -212,14 +253,11 @@ def build_planter(
                 POLYMER,
                 viewer_group="caps",
                 product_id=P_CAP_40,
-                note="bottom only; upper closure is now integral steel",
+                note="bottom only; upper closure is integral steel",
             )
 
-    # Lower frame: four conventional L40x40x3 rails between the posts.
-    for face, y, rear in (
-        ("front", 0.0, False),
-        ("rear", cfg.depth - cfg.angle_leg, True),
-    ):
+    # Lower frame: four conventional L40x40x3 rails between posts.
+    for face, y, rear in (("front", 0.0, False), ("rear", cfg.depth - cfg.angle_leg, True)):
         rail_id = next_id("A")
         add_shape(
             rail_id,
@@ -237,10 +275,7 @@ def build_planter(
             note="vertical outer leg gives the same 40 mm visual band as the welded frame",
         )
 
-    for side, x, right in (
-        ("left", 0.0, False),
-        ("right", cfg.length - cfg.angle_leg, True),
-    ):
+    for side, x, right in (("left", 0.0, False), ("right", cfg.length - cfg.angle_leg, True)):
         rail_id = next_id("A")
         add_shape(
             rail_id,
@@ -257,24 +292,14 @@ def build_planter(
             length_mm=clear_y,
         )
 
-    # Upper front/rear rails are cut from 600 mm pieces. Their horizontal leg is
-    # left intact at each end while the vertical leg is removed over the 40 mm
-    # post width, creating four integral steel post-mouth covers.
-    for face, y, rear in (
-        ("front", 0.0, False),
-        ("rear", cfg.depth - cfg.angle_leg, True),
-    ):
+    # Upper front/rear rails are 600 mm blanks whose horizontal wings also cap
+    # the post mouths. Only the vertical wing is removed over each 40 mm end.
+    for face, y, rear in (("front", 0.0, False), ("rear", cfg.depth - cfg.angle_leg, True)):
         rail_id = next_id("A")
         add_shape(
             rail_id,
             f"Upper {face} angle rail with integral post-cover tabs",
-            _top_cover_angle_x(
-                cfg.length,
-                p,
-                cfg.angle_leg,
-                cfg.angle_thickness,
-                rear=rear,
-            ),
+            _top_cover_angle_x(cfg.length, p, cfg.angle_leg, cfg.angle_thickness, rear=rear),
             (0.0, y, upper_z),
             "top_cover_angle_rail",
             "S235/S275 angle steel",
@@ -287,12 +312,7 @@ def build_planter(
             note="horizontal leg remains continuous and forms two 40x40x3 steel post caps; seal hairline joints with paintable exterior MS polymer",
         )
 
-    # Upper side rails remain conventional 520 mm L sections between posts and
-    # meet the edges of the front/rear cover tabs without overlapping them.
-    for side, x, right in (
-        ("left", 0.0, False),
-        ("right", cfg.length - cfg.angle_leg, True),
-    ):
+    for side, x, right in (("left", 0.0, False), ("right", cfg.length - cfg.angle_leg, True)):
         rail_id = next_id("A")
         add_shape(
             rail_id,
@@ -309,83 +329,115 @@ def build_planter(
             length_mm=clear_y,
         )
 
-    # Alberts 337254 / Leroy 14959336 is a two-plane 90-degree corner wrap,
-    # 50x50 legs x 70 high x 1.5 thick. It sits tightly over the *outside* faces
-    # of each corner. Only its material thickness projects beyond the nominal
-    # 600x600 envelope; the old artificial inward offset/third plane is gone.
-    corners = [
-        ("front left", 0.0, 0.0, False, False),
-        ("front right", cfg.length, 0.0, True, False),
-        ("rear left", 0.0, cfg.depth, False, True),
-        ("rear right", cfg.length, cfg.depth, True, True),
-    ]
+    # One internal reinforced bracket per rail/post joint: 8 rails x 2 ends = 16.
+    # Nothing wraps around or projects beyond the four exterior corners.
+    bracket_nodes: list[tuple[str, str, tuple[float, float, float], str, bool, bool]] = []
+    # tuple: label, axis, position, end_is_far, upper, rear_or_right_face
+    for level_name, upper in (("lower", False), ("upper", True)):
+        if upper:
+            base_z = (upper_z + cfg.angle_leg - cfg.angle_thickness) - bracket_projection
+        else:
+            base_z = lower_z + cfg.angle_thickness
 
-    for level_name, bracket_z in (
-        ("lower", lower_z),
-        ("upper", cfg.body_height - cfg.bracket_height),
-    ):
-        for corner_name, x, y, right, rear in corners:
-            bracket_id = next_id("K")
-            add_shape(
-                bracket_id,
-                f"{level_name.title()} {corner_name} Alberts corner wrap",
-                _corner_wrap(
-                    cfg.bracket_leg,
-                    cfg.bracket_height,
-                    cfg.bracket_thickness,
-                    right=right,
-                    rear=rear,
-                ),
-                (x, y, bracket_z),
-                "corner_wrap",
-                "Sendzimir galvanised steel",
-                f"90° wrap · 50x50 legs x {cfg.bracket_height:g} mm high x {cfg.bracket_thickness:g} mm",
-                "1 pc",
-                GALVANISED,
-                viewer_group="corner_connectors",
-                product_id=P_CORNER_WRAP,
-                note="actual two-plane envelope of Alberts 337254; exact hole coordinates still to be measured on one physical fitting",
+        front_y = cfg.bracket_inside_offset
+        rear_y = cfg.depth - cfg.bracket_inside_offset - cfg.bracket_width
+        for face, y, is_rear in (("front", front_y, False), ("rear", rear_y, True)):
+            bracket_nodes.extend(
+                [
+                    (f"{level_name} {face} left rail/post", "x", (p, y, base_z), False, upper, is_rear),
+                    (
+                        f"{level_name} {face} right rail/post",
+                        "x",
+                        (cfg.length - p - bracket_projection, y, base_z),
+                        True,
+                        upper,
+                        is_rear,
+                    ),
+                ]
             )
 
-            # Six symbolic Ø6.4 rivet heads: three on each wing. The outermost
-            # point on each 50 mm wing lands on the adjacent angle rail while the
-            # two inner points land on the 40 mm post. Exact holes will follow
-            # the purchased fitting rather than this conceptual pattern.
-            offsets = ((14.0, 16.0), (28.0, 36.0), (46.0, 56.0))
-            for wing, wing_name in (("x", "front/rear wing"), ("y", "left/right wing")):
-                for offset, z_offset in offsets:
-                    rivet_id = next_id("RV")
-                    if wing == "x":
-                        center_x = x - offset if right else x + offset
-                        head_y = y + cfg.bracket_thickness if rear else y - cfg.bracket_thickness - 3.0
-                        rivet_shape = Box(8.0, 3.0, 8.0, align=MIN_ALIGN)
-                        rivet_pos = (center_x - 4.0, head_y, bracket_z + z_offset - 4.0)
-                    else:
-                        head_x = x + cfg.bracket_thickness if right else x - cfg.bracket_thickness - 3.0
-                        center_y = y - offset if rear else y + offset
-                        rivet_shape = Box(3.0, 8.0, 8.0, align=MIN_ALIGN)
-                        rivet_pos = (head_x, center_y - 4.0, bracket_z + z_offset - 4.0)
+        left_x = cfg.bracket_inside_offset
+        right_x = cfg.length - cfg.bracket_inside_offset - cfg.bracket_width
+        for side, x, is_right in (("left", left_x, False), ("right", right_x, True)):
+            bracket_nodes.extend(
+                [
+                    (f"{level_name} {side} front rail/post", "y", (x, p, base_z), False, upper, is_right),
+                    (
+                        f"{level_name} {side} rear rail/post",
+                        "y",
+                        (x, cfg.depth - p - bracket_projection, base_z),
+                        True,
+                        upper,
+                        is_right,
+                    ),
+                ]
+            )
 
-                    add_shape(
-                        rivet_id,
-                        f"{level_name.title()} {corner_name} {wing_name} structural rivet",
-                        rivet_shape,
-                        rivet_pos,
-                        "structural_rivet",
-                        "Steel structural blind rivet",
-                        f"Ø{cfg.rivet_diameter:g} mm structural blind rivet",
-                        "1 pc",
-                        RIVET,
-                        viewer_group="structural_rivets",
-                        product_id=P_RIVET_64,
-                        note="symbolic location only; final positions follow Alberts 337254 holes and verified edge distances",
-                    )
+    for bracket_name, axis, position, far_end, upper, _face_flag in bracket_nodes:
+        bracket_id = next_id("K")
+        bracket_shape = (
+            _internal_bracket_x(
+                cfg.bracket_diagonal,
+                cfg.bracket_width,
+                cfg.bracket_tab,
+                cfg.bracket_thickness,
+                right_end=far_end,
+                upper=upper,
+            )
+            if axis == "x"
+            else _internal_bracket_y(
+                cfg.bracket_diagonal,
+                cfg.bracket_width,
+                cfg.bracket_tab,
+                cfg.bracket_thickness,
+                rear_end=far_end,
+                upper=upper,
+            )
+        )
+        add_shape(
+            bracket_id,
+            f"Internal reinforced bracket · {bracket_name}",
+            bracket_shape,
+            position,
+            "internal_corner_bracket",
+            "Corrosion-resistant steel",
+            f"trapezoidal/gusset bracket · conceptual {cfg.bracket_diagonal:g}x{cfg.bracket_width:g}x{cfg.bracket_tab:g} mm envelope",
+            "1 pc",
+            GALVANISED,
+            viewer_group="corner_connectors",
+            product_id=P_INTERNAL_BRACKET,
+            note="one bracket belongs to one L/post joint; completely inside the planter envelope",
+        )
+
+        # Four structural rivets per bracket: two into the post-side tab and two
+        # into the angle-side tab. Locations are symbolic until the chosen
+        # commercial stamping is physically measured.
+        for fixing_no in range(1, cfg.rivets_per_bracket + 1):
+            rivet_id = next_id("RV")
+            add_shape(
+                rivet_id,
+                f"{bracket_name} structural rivet {fixing_no}",
+                Box(6.0, 6.0, 3.0, align=MIN_ALIGN),
+                (
+                    position[0] + 5.0 + (fixing_no % 2) * 9.0,
+                    position[1] + 5.0 + ((fixing_no // 2) % 2) * 9.0,
+                    position[2] + (3.0 if fixing_no <= 2 else bracket_projection - 6.0),
+                ),
+                "structural_rivet",
+                "Steel structural blind rivet",
+                f"Ø{cfg.rivet_diameter:g} mm structural blind rivet",
+                "1 pc",
+                RIVET,
+                viewer_group="structural_rivets",
+                product_id=P_RIVET_64,
+                note="symbolic head only; final positions use the actual bracket holes and verified edge distances",
+            )
 
     assembly = Compound(label=model_id, children=shapes)
 
     metadata: dict[str, Any] = {
-        "schema_version": 2,
-        "status": "parallel concept study · no-weld / riveted structure v2",
+        "schema_version": 3,
+        "status": "parallel concept study · no-weld / riveted structure v3",
         "design_scope": "structure-only",
         "variant_family": "no-weld",
         "parameters": {
@@ -399,9 +451,9 @@ def build_planter(
             "angle_thickness": cfg.angle_thickness,
             "leg_clearance": cfg.leg_clearance,
             "rivet_diameter": cfg.rivet_diameter,
-            "corner_wrap_leg": cfg.bracket_leg,
-            "corner_wrap_height": cfg.bracket_height,
-            "corner_wrap_thickness": cfg.bracket_thickness,
+            "bracket_diagonal_mm": cfg.bracket_diagonal,
+            "bracket_width_mm": cfg.bracket_width,
+            "bracket_tab_mm": cfg.bracket_tab,
         },
         "derived": {
             "post_count": 4,
@@ -410,21 +462,22 @@ def build_planter(
             "standard_angle_rail_count": 6,
             "integral_top_cover_rail_count": 2,
             "integral_steel_top_cap_count": 4,
-            "corner_connector_count": 8,
-            "structural_rivet_count": 8 * cfg.rivets_per_corner,
+            "internal_bracket_count": 16,
+            "brackets_per_rail": 2,
+            "structural_rivet_count": 16 * cfg.rivets_per_bracket,
             "caps_count": 4,
             "plastic_top_cap_count": 0,
             "weld_count": 0,
             "clear_span_mm": clear_x,
-            "corner_wrap_projection_outside_frame_mm": cfg.bracket_thickness,
+            "corner_hardware_outside_envelope_mm": 0,
         },
         "parts": parts,
         "viewer": {
             "groups": [
                 {"id": "posts", "label": "40x40 posts", "node_names": groups["posts"], "offset_mm": [0, 0, 0]},
                 {"id": "angle_rails", "label": "L40x40x3 rails + steel top tabs", "node_names": groups["angle_rails"], "offset_mm": [0, 0, 180]},
-                {"id": "corner_connectors", "label": "Alberts 50x50x70 corner wraps", "node_names": groups["corner_connectors"], "offset_mm": [100, 100, 0]},
-                {"id": "structural_rivets", "label": "Ø6.4 structural rivets", "node_names": groups["structural_rivets"], "offset_mm": [180, 180, 0]},
+                {"id": "corner_connectors", "label": "Internal reinforced L/post brackets", "node_names": groups["corner_connectors"], "offset_mm": [80, 80, 0]},
+                {"id": "structural_rivets", "label": "Ø6.4 structural rivets", "node_names": groups["structural_rivets"], "offset_mm": [150, 150, 0]},
                 {"id": "caps", "label": "Bottom 40x40 caps", "node_names": groups["caps"], "offset_mm": [0, 0, -120]},
             ]
         },
@@ -448,14 +501,14 @@ def build_planter(
                 "note": "Two upper front/rear blanks are 600 mm because their horizontal wings also close the post tops.",
             },
             {
-                "id": P_CORNER_WRAP,
-                "retailer": "Leroy Merlin",
-                "ref": "14959336",
-                "name": "Cantonera metálica GAH Alberts acero galvanizado 50x50x70 mm",
-                "url": "https://www.leroymerlin.es/productos/cantonera-metalica-en-acero-galvanizado-de-50-x-50-x-70-mm-14959336.html",
-                "stock": "1 pc",
-                "suggested_qty": 8,
-                "note": "Alberts art. 337254; two 50 mm wings, 70 mm along bend, 1.5 mm thick, 6 x Ø6.5 mm holes.",
+                "id": P_INTERNAL_BRACKET,
+                "retailer": "Amazon.es",
+                "ref": "B0GVZ8KRXG",
+                "name": "Escuadra metálica trapezoidal reforzada para esquina",
+                "url": "https://www.amazon.es/Escuadras-Metalicas-Trapezoidal-Tornillos-Metalicos/dp/B0GVZ8KRXG",
+                "stock": "pack / exact count to verify",
+                "suggested_qty": 16,
+                "note": "Geometry candidate only. Amazon did not expose a reliable technical sheet to the CAD build; the model uses the common ~63x22x14 mm trapezoidal-bracket envelope pending measurement of one purchased part.",
             },
             {
                 "id": P_RIVET_64,
@@ -463,8 +516,8 @@ def build_planter(
                 "ref": "TBD",
                 "name": "Structural blind rivet steel/steel Ø6.4 mm",
                 "stock": "box",
-                "suggested_qty": 48,
-                "note": "Use a structural blind-rivet family, not a standard aluminium POP rivet.",
+                "suggested_qty": 64,
+                "note": "Use a structural blind-rivet family, not a standard aluminium POP rivet. Verify bracket hole diameter before purchase.",
             },
             {
                 "id": P_CAP_40,
@@ -479,16 +532,16 @@ def build_planter(
         "assemblies": [
             {
                 "id": "AS01",
-                "name": "No-weld riveted outer structure v2",
-                "contains": "4 shortened continuous posts + 8 angle rails (2 with integral top tabs) + 8 external Alberts corner wraps + structural blind rivets",
+                "name": "No-weld riveted outer structure v3",
+                "contains": "4 shortened continuous posts + 8 angle rails (2 with integral top tabs) + 16 internal reinforced rail/post brackets + structural blind rivets",
             }
         ],
         "joints": [
             {
                 "id": "J01",
-                "type": "structural blind-riveted external corner wrap",
-                "name": "Post / two-angle external corner node",
-                "spec": "One Alberts 337254 folded 90-degree wrap per upper/lower corner. Its two 50 mm wings sit directly on the two exterior faces and bridge the 40 mm post into each perpendicular angle rail. Six Ø6.4 structural blind rivets are the current concept; freeze final positions only after measuring the commercial part.",
+                "type": "internal reinforced blind-riveted L/post joint",
+                "name": "Individual angle-rail / post connection",
+                "spec": "Each end of each L40x40 rail has its own reinforced internal bracket. The bracket sits entirely inside the planter, with one attachment tab on the post and one on the angle shelf; target four Ø6.4 structural blind rivets per joint (two per attached member). There is no shared or exterior corner wrap.",
             },
             {
                 "id": "J02",
@@ -498,14 +551,14 @@ def build_planter(
             },
         ],
         "fabrication_notes": [
-            "Parallel concept only: this model intentionally contains the outer structure and permanent corner hardware, not the bag cassette, drainage or timber panels from the welded v12 design.",
-            "There are zero welded joints. The four posts remain continuous but are cut to 597 mm so the 3 mm upper-angle tabs finish exactly at the 600 mm envelope.",
-            "No plastic top caps: the upper front and rear L40x40x3 rails are 600 mm blanks. Cut away only their vertical leg over 40 mm at each end and leave the horizontal leg intact as the steel lid over each post.",
-            "Seal the very small top-tab/post and rail/tab seams with a thin exterior paintable MS-polymer fillet, then paint the assembled frame.",
-            "Correction from v1: Alberts 337254 is a two-plane 90-degree corner wrap, not a three-plane shelf bracket. The CAD now uses two 50 mm wings x 70 mm high x 1.5 mm and places them tightly around the exterior corner.",
-            "The corner wrap now projects only its 1.5 mm material thickness beyond the nominal frame envelope; the previous artificial 10-40 mm inboard/protruding representation has been removed.",
-            "The commercial wrap overlaps each 40 mm post by its full width and continues about 10 mm onto each adjacent angle rail. Confirm the real Ø6.5 hole positions and usable edge distances on one physical fitting before committing to Ø6.4 structural rivets.",
-            "Rivet heads shown in the CAD are symbolic and intentionally easy to select. Final head geometry/grip range depends on the structural blind-rivet family chosen.",
+            "Parallel concept only: outer structure and permanent joint hardware only; bag cassette, drainage and timber panels remain intentionally absent.",
+            "Correction from v2: all connector hardware is inside the planter. Nothing wraps around the four visible exterior corners.",
+            "There are 16 independent rail/post joints: every one of the 8 L rails gets one reinforced internal bracket at each end. The two rails meeting at a geometric corner do not share a bracket.",
+            "The Amazon B0GVZ8KRXG trapezoidal bracket is a geometry candidate because its bent tabs + diagonal web suit this internal joint much better than the previous exterior Alberts wrap. Exact dimensions, steel thickness and hole pattern must be measured before the drilling jig/rivet grip range are frozen.",
+            "The current CAD envelope (63x22x14 mm) represents the common size of this bracket family and is explicitly not asserted as the exact Amazon SKU dimension.",
+            "Use four structural blind rivets conceptually per bracket: two into the post-side tab and two into the angle-side tab. The rendered rivet heads are intentionally symbolic rather than a final drilling pattern.",
+            "The four posts are 597 mm so the 3 mm integral upper-angle tabs finish exactly at Z=600. No plastic top caps are used.",
+            "Seal the small top-tab/post and rail/tab seams with exterior paintable MS polymer, then paint the assembled frame.",
         ],
     }
 
