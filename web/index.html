@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
   <title>CAD · Parametric planters</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">
@@ -17,87 +17,92 @@
   <script type="module" src="./app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <span class="eyebrow">VBelles / CAD</span>
-      <h1 id="model-title">Parametric planter</h1>
+  <main class="workspace">
+    <section class="viewer-card" aria-label="Interactive 3D CAD model">
+      <div id="viewer" class="three-viewer" aria-label="3D planter viewer">
+        <div class="progress">Loading 3D model…</div>
+      </div>
+    </section>
+
+    <header class="topbar floating-panel">
+      <div class="brand-block">
+        <span class="eyebrow">VBelles / CAD</span>
+        <h1 id="model-title">Parametric planter</h1>
+      </div>
       <label class="model-picker">
-        Design
+        <span>Design</span>
         <select id="model-select" aria-label="Planter design"></select>
       </label>
-    </div>
-    <nav class="actions" aria-label="Model downloads">
+    </header>
+
+    <nav class="actions floating-panel" aria-label="Model downloads">
       <a id="step-link" class="button secondary" href="./downloads/planter.step">STEP</a>
       <a id="glb-link" class="button secondary" href="./models/planter.glb">GLB</a>
       <a class="button" href="https://github.com/VBelles/cad">GitHub</a>
     </nav>
-  </header>
 
-  <main>
-    <section class="viewer-card" aria-label="Interactive 3D CAD model">
-      <div class="viewer-toolbar">
-        <div class="viewer-toolbar-main">
-          <button id="reset-explosion" class="tool-button active" type="button">Assembled</button>
-          <button id="explode-all" class="tool-button" type="button">Explode all</button>
+    <div class="viewer-toolbar floating-panel">
+      <div class="viewer-toolbar-main">
+        <button id="reset-explosion" class="tool-button active" type="button">Assembled</button>
+        <button id="explode-all" class="tool-button" type="button">Explode all</button>
+      </div>
+      <div id="explode-groups" class="explode-groups" aria-label="Explode individual groups"></div>
+    </div>
+
+    <div class="viewer-help floating-panel">Drag to orbit · wheel to zoom · click a part to inspect it</div>
+
+    <aside class="info-panel floating-panel" aria-label="Model inspector">
+      <div class="inspector-header">
+        <div>
+          <span class="panel-kicker">Inspector</span>
+          <h2>Model data</h2>
         </div>
-        <div id="explode-groups" class="explode-groups" aria-label="Explode individual groups"></div>
+        <span id="status" class="badge">Loading…</span>
       </div>
 
-      <div id="viewer" class="three-viewer" aria-label="3D planter viewer">
-        <div class="progress">Loading 3D model…</div>
-      </div>
-      <div class="viewer-help">Drag to orbit · wheel to zoom · click a part to inspect it</div>
-    </section>
+      <div class="inspector-scroll">
+        <section>
+          <h3>Overview</h3>
+          <dl id="summary" class="summary"></dl>
+        </section>
 
-    <aside class="info-panel">
-      <section>
-        <div class="section-heading">
-          <h2>Model</h2>
-          <span id="status" class="badge">Loading…</span>
-        </div>
-        <dl id="summary" class="summary"></dl>
-      </section>
-
-      <section>
-        <h2>Selected part</h2>
-        <p id="selected-empty" class="empty-state">Click any visible CAD part.</p>
-        <div id="selected-part" class="selected-part" hidden>
-          <div class="selected-title-row">
-            <div>
-              <strong id="selected-name"></strong>
-              <span id="selected-id" class="part-id"></span>
+        <section>
+          <h3>Selected part</h3>
+          <p id="selected-empty" class="empty-state">Click any visible CAD part.</p>
+          <div id="selected-part" class="selected-part" hidden>
+            <div class="selected-title-row">
+              <div>
+                <strong id="selected-name"></strong>
+                <span id="selected-id" class="part-id"></span>
+              </div>
+              <button id="explode-selected" class="mini-button" type="button">Explode part</button>
             </div>
-            <button id="explode-selected" class="mini-button" type="button">Explode part</button>
+            <dl id="selected-details" class="part-details"></dl>
+            <a id="selected-product" class="product-link" target="_blank" rel="noopener" hidden></a>
           </div>
-          <dl id="selected-details" class="part-details"></dl>
-          <a id="selected-product" class="product-link" target="_blank" rel="noopener" hidden></a>
-        </div>
-      </section>
+        </section>
 
-      <section>
-        <h2>Materials / purchase</h2>
-        <div id="products" class="products"></div>
-      </section>
+        <section>
+          <h3>Materials / purchase</h3>
+          <div id="products" class="products"></div>
+        </section>
 
-      <section>
-        <h2>Bill of materials</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Profile</th><th>Cut / size</th><th>Qty</th></tr></thead>
-            <tbody id="bom"></tbody>
-          </table>
-        </div>
-      </section>
+        <section>
+          <h3>Bill of materials</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Profile</th><th>Cut / size</th><th>Qty</th></tr></thead>
+              <tbody id="bom"></tbody>
+            </table>
+          </div>
+        </section>
 
-      <section>
-        <h2>Fabrication notes</h2>
-        <ul id="notes" class="notes"></ul>
-      </section>
+        <section>
+          <h3>Fabrication notes</h3>
+          <ul id="notes" class="notes"></ul>
+        </section>
+      </div>
     </aside>
   </main>
-
-  <footer>
-    Generated from Python/build123d. Variants share the same parametric fabrication model.
-  </footer>
 </body>
 </html>
