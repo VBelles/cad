@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from build123d import export_gltf, export_step  # noqa: E402
 
-from models.planter_v6 import PRESETS, build_planter  # noqa: E402
+from models.planter_v7 import PRESETS, build_planter  # noqa: E402
 
 
 DIST = ROOT / "dist"
