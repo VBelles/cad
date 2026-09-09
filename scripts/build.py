@@ -4,13 +4,21 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from build123d import export_gltf, export_step  # noqa: E402
 
-from models.planter_v12 import PRESETS, build_planter  # noqa: E402
+from models.planter_bolted_structure import (  # noqa: E402
+    PRESETS as BOLTED_PRESETS,
+    build_planter as build_bolted_structure,
+)
+from models.planter_v12 import (  # noqa: E402
+    PRESETS as WELDED_PRESETS,
+    build_planter as build_welded_planter,
+)
 
 
 DIST = ROOT / "dist"
@@ -18,6 +26,13 @@ MODEL_DIR = DIST / "models"
 DOWNLOAD_DIR = DIST / "downloads"
 DATA_DIR = DIST / "data"
 WEB_DIR = ROOT / "web"
+
+
+MODEL_SPECS: dict[str, tuple[str, object, Callable]] = {}
+for model_id, (label, config) in WELDED_PRESETS.items():
+    MODEL_SPECS[model_id] = (label, config, build_welded_planter)
+for model_id, (label, config) in BOLTED_PRESETS.items():
+    MODEL_SPECS[model_id] = (label, config, build_bolted_structure)
 
 
 def write_json(path: Path, data: object) -> None:
@@ -35,8 +50,8 @@ def main() -> None:
 
     manifest: list[dict[str, str]] = []
 
-    for model_id, (label, config) in PRESETS.items():
-        result = build_planter(config, model_id=model_id)
+    for model_id, (label, config, builder) in MODEL_SPECS.items():
+        result = builder(config, model_id=model_id)
 
         solid_count = len(result.shape.solids())
         if solid_count < 30:
