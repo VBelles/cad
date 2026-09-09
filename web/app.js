@@ -147,6 +147,23 @@ function renderBom(bom, productsById) {
 function renderSummary(metadata) {
   const p = metadata.parameters;
   const d = metadata.derived;
+
+  if (metadata.design_scope === 'structure-only') {
+    summaryEl.replaceChildren(
+      summaryItem('Envelope', `${mm.format(p.length)} × ${mm.format(p.depth)} × ${mm.format(p.body_height)} mm`),
+      summaryItem('Study scope', 'Outer structure only'),
+      summaryItem('Posts', `${d.post_count} · ${mm.format(p.frame_size)} × ${mm.format(p.frame_size)} × ${mm.format(p.frame_wall)} mm tube`),
+      summaryItem('Horizontal rails', `${d.angle_rail_count} · L ${mm.format(p.angle_leg)} × ${mm.format(p.angle_leg)} × ${mm.format(p.angle_thickness)} mm`),
+      summaryItem('Clear rail span', `${mm.format(d.clear_span_mm)} mm`),
+      summaryItem('Corner connectors', `${d.corner_connector_count} · three-plane fittings`),
+      summaryItem('Structural rivets', `${d.structural_rivet_count} · Ø${mm.format(p.rivet_diameter)} mm`),
+      summaryItem('Welded joints', `${d.weld_count}`),
+      summaryItem('Post caps', `${d.caps_count}`),
+      summaryItem('Parts', `${metadata.parts.length}`),
+    );
+    return;
+  }
+
   const bagVolume = d.bag_module_count > 1
     ? `${mm.format(d.bag_volume_litres_each)} L × ${d.bag_module_count} = ≈ ${mm.format(d.bag_volume_litres_total)} L`
     : `≈ ${mm.format(d.bag_volume_litres_total)} L`;
