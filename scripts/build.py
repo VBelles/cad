@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from build123d import export_gltf, export_step  # noqa: E402
 
-from models.planter_v11 import PRESETS, build_planter  # noqa: E402
+from models.planter_v12 import PRESETS, build_planter  # noqa: E402
 
 
 DIST = ROOT / "dist"
@@ -21,7 +21,7 @@ WEB_DIR = ROOT / "web"
 
 
 def write_json(path: Path, data: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
