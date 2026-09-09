@@ -59,6 +59,22 @@ def main() -> None:
         # the wrong geometry and break part selection/group explosion.
         result.metadata.setdefault("viewer", {})["model_src"] = f"./models/{model_id}.glb"
 
+        # Same Alberts 50x50x70 corner fitting is stocked directly by Leroy
+        # Merlin Spain; prefer this source in the generated comparison BOM.
+        for product in result.metadata.get("products", []):
+            if product.get("id") == "alberts-corner-50x50x70":
+                product.update(
+                    {
+                        "retailer": "Leroy Merlin",
+                        "ref": "14959336",
+                        "name": "Cantonera metálica GAH Alberts acero galvanizado 50x50x70 mm",
+                        "url": "https://www.leroymerlin.es/productos/cantonera-metalica-en-acero-galvanizado-de-50-x-50-x-70-mm-14959336.html",
+                        "stock": "1 pc",
+                        "suggested_qty": 8,
+                        "note": "Six-hole commercial corner fitting; CAD remains symbolic until one physical fitting is measured.",
+                    }
+                )
+
         solid_count = len(result.shape.solids())
         if solid_count < 30:
             raise RuntimeError(
