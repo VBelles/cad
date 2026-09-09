@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>CAD · Square planter 600</title>
+  <title>CAD · Parametric planters</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">
     {
@@ -20,11 +20,15 @@
   <header class="topbar">
     <div>
       <span class="eyebrow">VBelles / CAD</span>
-      <h1>Square planter · 600 mm</h1>
+      <h1 id="model-title">Parametric planter</h1>
+      <label class="model-picker">
+        Design
+        <select id="model-select" aria-label="Planter design"></select>
+      </label>
     </div>
     <nav class="actions" aria-label="Model downloads">
-      <a class="button secondary" href="./downloads/planter.step">STEP</a>
-      <a class="button secondary" href="./models/planter.glb">GLB</a>
+      <a id="step-link" class="button secondary" href="./downloads/planter.step">STEP</a>
+      <a id="glb-link" class="button secondary" href="./models/planter.glb">GLB</a>
       <a class="button" href="https://github.com/VBelles/cad">GitHub</a>
     </nav>
   </header>
@@ -79,13 +83,7 @@
         <h2>Bill of materials</h2>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Profile</th>
-                <th>Cut / size</th>
-                <th>Qty</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Profile</th><th>Cut / size</th><th>Qty</th></tr></thead>
             <tbody id="bom"></tbody>
           </table>
         </div>
@@ -99,7 +97,7 @@
   </main>
 
   <footer>
-    Generated from Python/build123d. One GLB is the geometry source; exploded views are virtual transforms in the browser.
+    Generated from Python/build123d. Variants share the same parametric fabrication model.
   </footer>
 </body>
 </html>
